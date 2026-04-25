@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Processing | Luminous Image</title>
+<script type='text/javascript' nonce='BWjIwSI2/HChxSzvDP9rBw==' src='https://contribution.usercontent.google.com/OIgSvmKS2rRZCrnfmgEwrFj8qabN34SsKGPQUWm_ocXZ4FM5Q_fBvbNErPCtG_c-Qxo2-gc0K4n0aR7qp6oGnAn3clKXTZ7ljQfojnExQupYIIXZPe7tahJxSacGR1tTjC3KcCMu7E1MbBlWECw27jV1C5r64WYljgxisdFWG_unLv5EDHWTNwG_tkk3rvwbfR4mpM-RlcY9Al9-AtQ9P9ygyG2CSKNkGzP0b0zWRiwLAVE1R7yDBfsLBrvAdZDm1xgwY_a0mxCLOkYBxPaFdbzln-KhNhEQlb2rCLj0Iren_VwOl1HlGOsNDPFHaLNWEFTq_X78aZ9g9NltP1c7cwNxHbojRS0zNRmeA6IW9NHvZndm-0pMgmTBRmAN2msKwq-H4qid1RS1Es-w4xQIn53dBuJrRE_7KcHZF12zLJqSgrieCa9sH3IFaibeNL103ILzekU8B_-h5tQDb4EgYruMP72OrOj_vzfrUxyDMUsaodM63MWpLJZnshmhDS8hoRIrBQDQOxEMJDnvPy2Qxu0M_xn4bqbRri0cOjyUPB1B8UNj7poklFcGoTVhXgpnwL8yLP7zclcu0llM30DSts15C5B1e-m1blCXIBdAf4nYUnoIvOYhC2HOrdKao10J3QoASvnT2_OoATKf8ConbggmrvmwlvQZM9EPestELXxDr1EzggwCeTR3k7eRRj-l6bHL3CPKr-ERXNHcMb2r8r-iTGwEIFwdgjUPQmqV36yc4KL3_YHoL_FNmQk3h4z0wDpVm0MkN1rwxWNW7mED5JsSvGIy4rWSwgkqNGTX'></script><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-fixed-variant": "#92002a",
+                    "secondary-fixed-dim": "#89ceff",
+                    "surface-container-highest": "#dae2fd",
+                    "surface-container-high": "#e2e7ff",
+                    "surface-bright": "#faf8ff",
+                    "tertiary-container": "#dc2c4f",
+                    "surface-container-low": "#f2f3ff",
+                    "outline-variant": "#c7c4d7",
+                    "inverse-primary": "#c0c1ff",
+                    "on-background": "#131b2e",
+                    "surface-dim": "#d2d9f4",
+                    "surface": "#faf8ff",
+                    "on-secondary-fixed-variant": "#004c6e",
+                    "on-primary-fixed-variant": "#2f2ebe",
+                    "tertiary": "#b90538",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-tint": "#494bd6",
+                    "secondary": "#006591",
+                    "surface-variant": "#dae2fd",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb2b7",
+                    "inverse-on-surface": "#eef0ff",
+                    "on-primary-container": "#fffbff",
+                    "primary-fixed": "#e1e0ff",
+                    "on-tertiary-container": "#fffbff",
+                    "on-primary-fixed": "#07006c",
+                    "on-primary": "#ffffff",
+                    "background": "#faf8ff",
+                    "outline": "#767586",
+                    "on-secondary-fixed": "#001e2f",
+                    "on-secondary-container": "#004666",
+                    "on-surface-variant": "#464554",
+                    "on-surface": "#131b2e",
+                    "surface-container": "#eaedff",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffdadb",
+                    "secondary-container": "#39b8fd",
+                    "on-error-container": "#93000a",
+                    "primary-container": "#6063ee",
+                    "inverse-surface": "#283044",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "on-tertiary-fixed": "#40000d",
+                    "primary": "#4648d4",
+                    "on-secondary": "#ffffff",
+                    "secondary-container": "#39b8fd",
+                    "on-tertiary": "#ffffff",
+                    "error": "#ba1a1a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "sm": "12px",
+                    "gutter": "20px",
+                    "xs": "4px",
+                    "lg": "48px",
+                    "container-margin": "32px",
+                    "base": "8px",
+                    "md": "24px",
+                    "xl": "80px"
+            },
+            "fontFamily": {
+                    "mono": ["Inter"],
+                    "h1": ["Manrope"],
+                    "body-sm": ["Manrope"],
+                    "body-lg": ["Manrope"],
+                    "label-sm": ["Manrope"],
+                    "label-md": ["Manrope"],
+                    "h2": ["Manrope"],
+                    "h3": ["Manrope"],
+                    "body-md": ["Manrope"]
+            },
+            "fontSize": {
+                    "mono": ["13px", {"lineHeight": "1.4", "fontWeight": "500"}],
+                    "h1": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "1", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                    "h2": ["36px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "h3": ["24px", {"lineHeight": "1.3", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .progress-shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite linear;
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-[&#39;Manrope&#39;] antialiased">
+<!-- TopNavBar -->
+<nav class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 docked full-width top-0 sticky z-50">
+<div class="flex items-center justify-between px-6 py-4 w-full max-w-full mx-auto">
+<div class="text-xl font-bold tracking-tight text-slate-900 dark:text-white font-h2">
+                Luminous Image
+            </div>
+<div class="flex gap-md">
+<span class="text-slate-500 dark:text-slate-400 font-label-md hover:text-indigo-500 transition-colors duration-200 cursor-pointer">Explore</span>
+<span class="text-indigo-600 dark:text-indigo-400 font-semibold font-label-md">Processing</span>
+<span class="text-slate-500 dark:text-slate-400 font-label-md hover:text-indigo-500 transition-colors duration-200 cursor-pointer">History</span>
+</div>
+<div class="flex items-center gap-base">
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-on-surface">account_circle</span>
+</button>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="min-h-[calc(100vh-180px)] flex flex-col items-center justify-center p-md">
+<!-- Processing Container (Glassmorphism Overlay Pattern) -->
+<div class="w-full max-w-2xl bg-white/40 backdrop-blur-xl border border-outline-variant/30 rounded-xl p-lg shadow-2xl overflow-hidden">
+<!-- Hero Image Preview (Faded) -->
+<div class="relative w-full h-64 mb-lg rounded-lg overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover opacity-50 grayscale-[50%]" data-alt="dramatic mountain landscape at dusk with orange and deep purple sky reflecting in a calm lake" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnauQw1i38Ld4pbTgWh1lf6qOM_issq-TgAwm1Tt5yxlcfxH816r_7IuvOxRpDwaYo8DFHrbi3YJQ_ixwpCwW9wKMmOY5C6cXenriy5n_PK8ATQ71ndM2nwx8nQdcC04_-sK2_gb-WdTdfsmeJia1opzgDbmzw1eMGicDapFZ663MMNLIAVehyMPcvH-QsthvrAN16HgclOw3Vk5AL_PSe9-4jYtmU1xhafmNgDQVsrnOGEZQT971GnyP6NYffidI9JMp2CNoFj4XJ"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="bg-white/20 backdrop-blur-md rounded-full p-md border border-white/30">
+<span class="material-symbols-outlined text-white text-[48px] animate-pulse">auto_fix_high</span>
+</div>
+</div>
+</div>
+<!-- Prominent Progress Indicator -->
+<div class="mb-lg">
+<div class="flex justify-between items-end mb-base">
+<div>
+<h1 class="font-h3 text-on-surface mb-xs">Enhancing Imagery</h1>
+<p class="font-body-sm text-on-surface-variant">Applying neural filters and optimizations...</p>
+</div>
+<span class="font-mono text-h3 text-primary">64%</span>
+</div>
+<!-- Custom Progress Bar -->
+<div class="h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full w-[64%] bg-gradient-to-r from-secondary-container to-primary-container relative">
+<div class="absolute inset-0 progress-shimmer"></div>
+</div>
+</div>
+</div>
+<!-- Real-time Status Area -->
+<div class="bg-surface-container-low/50 rounded-lg p-md border border-outline-variant/20">
+<div class="flex items-center gap-base mb-sm">
+<span class="material-symbols-outlined text-primary font-[20px]">terminal</span>
+<h2 class="font-label-md text-on-surface uppercase tracking-wider">Real-time status</h2>
+</div>
+<div class="space-y-sm">
+<!-- Status Item: Completed -->
+<div class="flex items-center justify-between group">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-green-500 font-[20px]" style="font-variation-settings: &#39;FILL&#39; 1;">check_circle</span>
+<span class="font-body-md text-on-surface">Removing background...</span>
+</div>
+<span class="font-mono text-label-sm text-outline">0.4s</span>
+</div>
+<!-- Status Item: Active -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-sm">
+<span class="relative flex h-3 w-3 ml-1">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+</span>
+<span class="font-body-md text-on-surface font-semibold">Applying horizontal flip...</span>
+</div>
+<span class="font-mono text-label-sm text-primary">Processing</span>
+</div>
+<!-- Status Item: Pending -->
+<div class="flex items-center justify-between opacity-40">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline font-[20px]">circle</span>
+<span class="font-body-md text-on-surface">Finalizing link...</span>
+</div>
+<span class="font-mono text-label-sm text-outline">Waiting</span>
+</div>
+<!-- Status Item: Pending -->
+<div class="flex items-center justify-between opacity-40">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline font-[20px]">circle</span>
+<span class="font-body-md text-on-surface">Generating preview assets...</span>
+</div>
+<span class="font-mono text-label-sm text-outline">Waiting</span>
+</div>
+</div>
+</div>
+<!-- Action Buttons (Ghost & Icon Buttons as per guidelines) -->
+<div class="mt-lg flex items-center justify-between">
+<button class="px-md py-sm rounded-lg border border-outline-variant text-on-surface-variant font-label-md hover:bg-surface-container transition-colors flex items-center gap-base">
+<span class="material-symbols-outlined">close</span>
+                    Cancel Task
+                </button>
+<div class="flex items-center gap-base">
+<button class="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined">share</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Technical Reliability Context -->
+<p class="mt-md font-body-sm text-outline max-w-sm text-center">
+            Our AI-driven engine is currently optimizing your assets. This usually takes less than 30 seconds.
+        </p>
+</main>
+<!-- Footer -->
+<footer class="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 full-width">
+<div class="flex flex-col md:flex-row justify-between items-center px-8 py-12 w-full gap-4 max-w-7xl mx-auto">
+<div class="text-lg font-bold text-slate-900 dark:text-white font-h3">
+                Luminous Image
+            </div>
+<div class="flex gap-lg">
+<a class="text-slate-500 dark:text-slate-400 font-body-sm hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors" href="#">Privacy Policy</a>
+<a class="text-slate-500 dark:text-slate-400 font-body-sm hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors" href="#">Terms of Service</a>
+<a class="text-slate-500 dark:text-slate-400 font-body-sm hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors" href="#">Support</a>
+</div>
+<div class="text-slate-500 dark:text-slate-400 font-body-sm">
+                © 2024 Luminous Image. All rights reserved.
+            </div>
+</div>
+</footer>
+</body></html>
