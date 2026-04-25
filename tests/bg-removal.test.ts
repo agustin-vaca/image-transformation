@@ -3,9 +3,10 @@ import { ApiError, ErrorCodes } from "@/server/errors";
 
 /**
  * The real `@imgly/background-removal-node` downloads ~80 MB of ONNX model
- * weights on first call and runs CPU inference. Exercising it in CI would
- * be slow and flaky (network + disk cache), so the unit test mocks the
- * library and asserts our wrapper's error mapping + buffer plumbing.
+ * weights from a CDN on first call (cached to disk afterwards) and runs
+ * CPU inference. Exercising it in CI would be slow and flaky (cold cache
+ * + network), so the unit test mocks the library and asserts our wrapper's
+ * error mapping + buffer plumbing.
  *
  * Real end-to-end coverage comes from manual QA on the deployed preview
  * once issue 005 wires the pipeline.
