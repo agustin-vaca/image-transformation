@@ -1,10 +1,10 @@
 ---
 id: 001
 title: Tracer bullet — end-to-end hard-coded upload
-status: todo
+status: in-progress
 blocked_by: [000]
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context

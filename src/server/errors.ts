@@ -1,15 +1,7 @@
-// Stable error codes for the ApiResponse envelope. See PRD §6.
-export const ErrorCodes = {
-  INVALID_FILE: "INVALID_FILE",
-  FILE_TOO_LARGE: "FILE_TOO_LARGE",
-  BG_REMOVAL_FAILED: "BG_REMOVAL_FAILED",
-  STORAGE_FAILED: "STORAGE_FAILED",
-  NOT_FOUND: "NOT_FOUND",
-  EXPIRED: "EXPIRED",
-  INTERNAL: "INTERNAL",
-} as const;
+import { ErrorCodes, type ApiResponse, type ErrorCode } from "@/lib/api";
 
-export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
+export { ErrorCodes };
+export type { ErrorCode };
 
 export class ApiError extends Error {
   readonly code: ErrorCode;
@@ -19,3 +11,31 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+const STATUS_BY_CODE: Record<ErrorCode, number> = {
+  INVALID_FILE: 400,
+  FILE_TOO_LARGE: 413,
+  BG_REMOVAL_FAILED: 502,
+  STORAGE_FAILED: 502,
+  NOT_FOUND: 404,
+  EXPIRED: 410,
+  INTERNAL: 500,
+};
+
+export function toErrorResponse(err: unknown): {
+  status: number;
+  body: ApiResponse<never>;
+} {
+  if (err instanceof ApiError) {
+    return {
+      status: STATUS_BY_CODE[err.code],
+      body: { ok: false, error: { code: err.code, message: err.message } },
+    };
+  }
+  const message = err instanceof Error ? err.message : "Unknown error";
+  return {
+    status: 500,
+    body: { ok: false, error: { code: ErrorCodes.INTERNAL, message } },
+  };
+}
+
