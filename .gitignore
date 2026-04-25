@@ -53,3 +53,6 @@ yarn-error.log*
 *.sqlite
 *.sqlite3
 data/
+
+# Playwright MCP scratch
+.playwright-mcp/
