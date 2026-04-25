@@ -1,10 +1,10 @@
 ---
 id: 004
 title: Cloud storage upload + delete
-status: todo
+status: done
 blocked_by: [001]
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context

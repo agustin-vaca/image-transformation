@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
-import { StubImageProcessor } from "@/server/processor/stub";
+import { R2ImageProcessor } from "@/server/processor/r2-image-processor";
+import { createR2StorageFromEnv } from "@/server/storage/r2";
+import { env } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 
 export const runtime = "nodejs";
+// Background removal does CPU-bound ONNX inference and can take >10s on
+// cold starts; opt out of Vercel's default 10s function cap.
+export const maxDuration = 60;
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB (PRD §3)
 const ACCEPTED_MIMES = new Set([
@@ -35,7 +40,8 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
 
     const buffer = Buffer.from(await entry.arrayBuffer());
     const origin = new URL(request.url).origin;
-    const processor = new StubImageProcessor(origin);
+    const storage = createR2StorageFromEnv(env);
+    const processor = new R2ImageProcessor(origin, storage);
     const dto = await processor.process(buffer, entry.type, entry.name);
 
     return NextResponse.json({ ok: true, data: dto });

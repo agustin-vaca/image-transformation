@@ -1,7 +1,7 @@
 ---
 id: 002
 title: Real background removal integration
-status: in-progress
+status: done
 blocked_by: [001]
 slice: vertical
 owner: copilot

@@ -1,10 +1,10 @@
 ---
 id: 005
 title: Wire real ImageProcessor pipeline
-status: todo
+status: in-progress
 blocked_by: [002, 003, 004]
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context
