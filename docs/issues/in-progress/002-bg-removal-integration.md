@@ -1,10 +1,10 @@
 ---
 id: 002
 title: Real background removal integration
-status: todo
+status: in-progress
 blocked_by: [001]
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context

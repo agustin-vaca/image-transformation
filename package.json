@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -30,5 +31,10 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^2.1.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "sharp": "^0.34.5"
+    }
   }
 }
