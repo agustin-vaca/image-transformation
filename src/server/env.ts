@@ -1,7 +1,14 @@
 import { z } from "zod";
 
-// Parsed eagerly at module load. Throws on missing/invalid env so we never
-// silently 500 at request time. See PRD §9.4.
+// Validated at first access (lazy + memoized). Throws on missing/invalid env
+// so we never silently 500 at request time, but does NOT throw during the
+// Next.js build's "collect page data" pass — the build server doesn't have
+// runtime secrets, and we don't want a missing R2 key to block deploys of
+// e.g. the docs page or unrelated routes.
+//
+// PRD §9.4: "fail fast" still holds — the first /api request that touches
+// env will throw, surfaced as a generic 500 to the client and the full
+// validation message to the server log.
 const EnvSchema = z.object({
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
@@ -25,9 +32,9 @@ function parseEnv(): Env {
   return parsed.data;
 }
 
-export const env: Env = parseEnv();
+let cached: Env | undefined;
 
-// Back-compat accessor; returns the same eagerly-parsed value.
 export function getEnv(): Env {
-  return env;
+  if (!cached) cached = parseEnv();
+  return cached;
 }

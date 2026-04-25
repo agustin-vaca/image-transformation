@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { R2ImageProcessor } from "@/server/processor/r2-image-processor";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
-import { env } from "@/server/env";
+import { getEnv } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 
@@ -40,7 +40,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
 
     const buffer = Buffer.from(await entry.arrayBuffer());
     const origin = new URL(request.url).origin;
-    const storage = createR2StorageFromEnv(env);
+    const storage = createR2StorageFromEnv(getEnv());
     const processor = new R2ImageProcessor(origin, storage);
     const dto = await processor.process(buffer, entry.type, entry.name);
 
