@@ -2,16 +2,16 @@
 
 > Upload an image → background removed + horizontally flipped → get a unique shareable link that expires in 30 minutes.
 
-**Live URL:** _coming soon (added in issue [000-repo-init](docs/issues/todo/000-repo-init.md))_
+**Live URL:** https://image-transformation-two.vercel.app
 
 ---
 
 ## Status
 
-🚧 **Planning phase.** Code scaffolding has not started yet. The product specification, architecture decisions, and Kanban backlog are complete:
+🚧 **Scaffolding done; tracer-bullet in progress.** The Next.js app builds, lints, type-checks, tests, and deploys to Vercel. Real image pipeline is being added incrementally per the issue backlog.
 
 - 📄 [Product Requirements Document](docs/PRD.md)
-- 📋 [Issue backlog](docs/issues/todo/) (issues 000–009)
+- 📋 [Issue backlog](docs/issues/todo/) · [done](docs/issues/done/)
 - 🤖 [Copilot / agent instructions](.github/copilot-instructions.md)
 
 ## Stack (decided)
@@ -27,14 +27,15 @@
 
 See [PRD §5 / §9](docs/PRD.md) for the full rationale.
 
-## Repo layout (target)
+## Repo layout
 
 ```
 .
-├── app/          # Next.js UI + thin Route Handlers
-├── server/       # framework-agnostic business logic (zero next/* imports)
-├── components/
-├── lib/          # client-only helpers
+├── src/
+│   ├── app/          # Next.js UI + thin Route Handlers
+│   ├── server/       # framework-agnostic business logic (no next/* imports)
+│   ├── components/
+│   └── lib/          # client-only helpers
 ├── tests/        # vitest
 ├── docs/         # PRD + issue backlog
 └── .github/      # copilot-instructions.md, CI
@@ -51,4 +52,16 @@ This project follows the agentic workflow described in [.github/copilot-instruct
 
 ## Getting started
 
-_Will be filled in after issue [000-repo-init](docs/issues/todo/000-repo-init.md) lands._
+```bash
+pnpm install
+cp .env.example .env.local   # fill in R2_* + APP_BASE_URL + CRON_SECRET
+pnpm dev                     # http://localhost:3000
+```
+
+Scripts:
+
+- `pnpm dev` — Next.js dev server
+- `pnpm build` / `pnpm start` — production build + run
+- `pnpm typecheck` — `tsc --noEmit`
+- `pnpm lint` — ESLint
+- `pnpm test` / `pnpm test:watch` — vitest
