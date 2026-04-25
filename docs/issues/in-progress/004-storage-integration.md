@@ -32,3 +32,4 @@ A `Storage` deep module in `server/storage/r2.ts` that hides R2 + the S3 SDK beh
 - Pipeline wiring (issue 005).
 - Cron cleanup job (issue 009).
 - Direct-to-R2 presigned uploads (future, when files exceed Vercel body limits).
+- **Real R2 integration test** — deferred to a follow-up. User opted to ship the module + mocked unit tests now and add the integration test once R2 credentials are wired into the CI environment. The unit tests cover: command shape, previewUrl construction, error mapping (`STORAGE_FAILED` / `NOT_FOUND`), idempotent delete, and no-info-leak.
