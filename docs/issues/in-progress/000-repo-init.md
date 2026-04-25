@@ -1,10 +1,10 @@
 ---
 id: 000
 title: Repo init — Next.js + Option C scaffold
-status: todo
+status: in-progress
 blocked_by: []
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context
