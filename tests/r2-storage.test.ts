@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ApiError, ErrorCodes } from "@/server/errors";
 import { R2Storage } from "@/server/storage/r2";
 
@@ -45,12 +45,21 @@ vi.mock("@aws-sdk/client-s3", () => {
   };
 });
 
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | undefined;
+
 beforeEach(() => {
   sendMock.mockReset();
   // Source `console.error`s the underlying error before mapping to ApiError
   // (server-side log, OWASP A09). Silence in tests to keep output clean and
   // prevent vitest from surfacing the logged Error as a test failure.
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  // Restore only the console.error spy — `vi.restoreAllMocks()` would also
+  // restore the S3 client mocks declared via `vi.mock(...)`, breaking later
+  // tests in this file.
+  consoleErrorSpy?.mockRestore();
 });
 
 const config = {
