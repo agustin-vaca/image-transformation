@@ -32,10 +32,17 @@ export function toErrorResponse(err: unknown): {
       body: { ok: false, error: { code: err.code, message: err.message } },
     };
   }
-  const message = err instanceof Error ? err.message : "Unknown error";
+  // Log server-side; never leak raw error details to the client (OWASP A09).
+  console.error("Unhandled server error:", err);
   return {
     status: 500,
-    body: { ok: false, error: { code: ErrorCodes.INTERNAL, message } },
+    body: {
+      ok: false,
+      error: {
+        code: ErrorCodes.INTERNAL,
+        message: "Something went wrong. Please try again.",
+      },
+    },
   };
 }
 

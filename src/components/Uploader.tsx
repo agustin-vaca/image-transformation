@@ -46,6 +46,9 @@ export function Uploader() {
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Clear the value so selecting the same file again still fires onChange
+    // (browsers suppress the event when the value is unchanged).
+    e.target.value = "";
     if (file) void upload(file);
   };
 
@@ -69,7 +72,7 @@ export function Uploader() {
     <div className="w-full max-w-xl mx-auto flex flex-col gap-6">
       {status.kind !== "success" && (
         <label
-          className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-16 text-center transition ${
+          className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-16 text-center transition focus-within:outline-none focus-within:ring-2 focus-within:ring-zinc-900 focus-within:ring-offset-2 dark:focus-within:ring-zinc-100 dark:focus-within:ring-offset-black ${
             status.kind === "uploading"
               ? "border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 cursor-wait"
               : "border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:bg-zinc-900 cursor-pointer"
