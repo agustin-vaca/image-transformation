@@ -16,10 +16,9 @@ export class Flipper {
     try {
       return await sharp(buf).flop().png().toBuffer();
     } catch (err) {
-      throw new ApiError(
-        ErrorCodes.INTERNAL,
-        `Failed to flip image: ${err instanceof Error ? err.message : "unknown"}`,
-      );
+      // Log server-side; never leak underlying library details to clients.
+      console.error("Failed to flip image:", err);
+      throw new ApiError(ErrorCodes.INTERNAL, "Failed to flip image.");
     }
   }
 }

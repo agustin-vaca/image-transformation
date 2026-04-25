@@ -33,7 +33,6 @@ async function rawPixels(
   png: Buffer,
 ): Promise<{ data: Buffer; info: sharp.OutputInfo }> {
   const { data, info } = await sharp(png)
-    .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
   return { data, info };
@@ -57,24 +56,32 @@ describe("Flipper", () => {
     expect(px(3)).toEqual([255, 0, 0, 255]);
   });
 
-  it("preserves the alpha channel", async () => {
-    const transparent = await sharp({
-      create: {
-        width: 2,
-        height: 2,
-        channels: 4,
-        background: { r: 10, g: 20, b: 30, alpha: 0.5 },
-      },
+  it("preserves the alpha channel and its values", async () => {
+    // Solid 2x2 RGBA tile with alpha = 128 (≈ 0.5).
+    const rgba = Buffer.from(
+      [10, 20, 30, 128, 10, 20, 30, 128, 10, 20, 30, 128, 10, 20, 30, 128],
+    );
+    const transparent = await sharp(rgba, {
+      raw: { width: 2, height: 2, channels: 4 },
     })
       .png()
       .toBuffer();
 
     const flipped = await new Flipper().flip(transparent);
-    const { info } = await rawPixels(flipped);
 
-    expect(info.channels).toBe(4);
     const meta = await sharp(flipped).metadata();
     expect(meta.hasAlpha).toBe(true);
+    expect(meta.channels).toBe(4);
+
+    const { data, info } = await rawPixels(flipped);
+    expect(info.channels).toBe(4);
+    // Every pixel should still be (10, 20, 30, 128) after a horizontal flip
+    // of a solid tile — proves alpha *values* round-trip, not just presence.
+    for (let i = 0; i < info.width * info.height; i++) {
+      expect(Array.from(data.subarray(i * 4, i * 4 + 4))).toEqual([
+        10, 20, 30, 128,
+      ]);
+    }
   });
 
   it("input pixel (0,y) equals output pixel (width-1,y)", async () => {
