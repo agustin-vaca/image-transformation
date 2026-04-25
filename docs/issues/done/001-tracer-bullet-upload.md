@@ -1,7 +1,7 @@
 ---
 id: 001
 title: Tracer bullet — end-to-end hard-coded upload
-status: in-progress
+status: done
 blocked_by: [000]
 slice: vertical
 owner: copilot
@@ -54,5 +54,8 @@ A user on the deployed app can click "Upload", and the UI displays a working pub
 - Delete endpoint.
 - Persistence / metadata DB.
 
-## Retro (fill on completion)
-_TBD_
+## Retro
+- Tracer bullet shipped: UI ↔ `POST /api/images` ↔ `ImageProcessor` interface ↔ `StubImageProcessor` ↔ `ImageDTO`. Whole shape exists end-to-end before any real integration.
+- Locked deep-module boundary at `ImageProcessor.process(buf, mime, filename)` so 002–005 just swap the implementation.
+- Copilot reviewer caught 3 valid issues: keyboard a11y on drop-zone, `<input type=file>` value not reset (same-file retry), and raw error message leak in `INTERNAL` responses. All addressed in commit `22365d9`.
+- PR #2 merged.

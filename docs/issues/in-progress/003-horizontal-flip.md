@@ -1,10 +1,10 @@
 ---
 id: 003
 title: Horizontal flip with sharp
-status: todo
+status: in-progress
 blocked_by: [001]
 slice: vertical
-owner: unassigned
+owner: copilot
 ---
 
 ## Context
