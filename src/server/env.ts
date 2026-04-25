@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Parsed at module load. Throws on missing/invalid env so we never silently
-// 500 at request time. See PRD §9.4.
+// Parsed eagerly at module load. Throws on missing/invalid env so we never
+// silently 500 at request time. See PRD §9.4.
 const EnvSchema = z.object({
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
@@ -14,10 +14,7 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
-let cached: Env | null = null;
-
-export function getEnv(): Env {
-  if (cached) return cached;
+function parseEnv(): Env {
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues
@@ -25,6 +22,12 @@ export function getEnv(): Env {
       .join("\n");
     throw new Error(`Invalid environment variables:\n${issues}`);
   }
-  cached = parsed.data;
-  return cached;
+  return parsed.data;
+}
+
+export const env: Env = parseEnv();
+
+// Back-compat accessor; returns the same eagerly-parsed value.
+export function getEnv(): Env {
+  return env;
 }
