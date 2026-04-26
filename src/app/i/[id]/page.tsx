@@ -49,7 +49,7 @@ export default async function ImagePage({
         <img
           src={publicUrl}
           alt="Shared image"
-          className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-900"
+          className="checker w-full rounded-lg"
         />
         <ShareActions
           id={id}
