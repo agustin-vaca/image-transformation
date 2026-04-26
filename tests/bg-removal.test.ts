@@ -1,17 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ApiError, ErrorCodes } from "@/server/errors";
 
-/**
- * The real `@imgly/background-removal-node` downloads ~80 MB of ONNX model
- * weights from a CDN on first call (cached to disk afterwards) and runs
- * CPU inference. Exercising it in CI would be slow and flaky (cold cache
- * + network), so the unit test mocks the library and asserts our wrapper's
- * error mapping + buffer plumbing.
- *
- * Real end-to-end coverage comes from manual QA on the deployed preview
- * once issue 005 wires the pipeline.
- */
-
+// The real library downloads ~80 MB of ONNX weights on first call and runs
+// CPU inference, so we mock it and assert our wrapper's plumbing.
 const mockRemoveBackground = vi.hoisted(() => vi.fn());
 
 vi.mock("@imgly/background-removal-node", () => ({
