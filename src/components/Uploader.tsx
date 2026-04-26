@@ -68,6 +68,21 @@ export function Uploader() {
     }
   };
 
+  const downloadImage = async (url: string, filename: string) => {
+    // The `download` attribute is ignored cross-origin (R2 is a different host),
+    // so fetch the bytes and trigger a programmatic download via a blob URL.
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto flex flex-col gap-6">
       {status.kind !== "success" && (
@@ -142,6 +157,10 @@ export function Uploader() {
               <a
                 href={status.data.previewUrl}
                 download={status.data.filename}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void downloadImage(status.data.previewUrl, status.data.filename);
+                }}
                 className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
               >
                 Download

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { ApiError, ErrorCodes } from "@/server/errors";
+import { DownloadButton } from "./DownloadButton";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,13 +43,11 @@ export default async function ImagePage({
           className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-900"
         />
         <div className="flex flex-wrap gap-2">
-          <a
-            href={publicUrl}
-            download
+          <DownloadButton
+            url={publicUrl}
+            filename={`image-${id}.png`}
             className="flex-1 min-w-[8rem] rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            Download
-          </a>
+          />
           <Link
             href="/"
             className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
