@@ -35,7 +35,15 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/images": [
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/x64/**/*",
+      // imgly weights — include BOTH the real .pnpm path *and* the
+      // hoisted/symlinked path. The library resolves its default
+      // publicPath via `path.resolve('node_modules/@imgly/background-
+      // removal-node/dist/')`, i.e. it reads from the non-pnpm path
+      // at runtime. Vercel's NFT does not recreate pnpm symlinks, so
+      // we have to include that location explicitly too or readFile
+      // throws ENOENT on resources.json.
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**/*",
+      "./node_modules/@imgly/background-removal-node/dist/**/*",
     ],
   },
   outputFileTracingExcludes: {
