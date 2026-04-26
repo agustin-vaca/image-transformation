@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "coverage/**",
     "mock/**",
+    "scripts/**",
   ]),
   {
     // server/ must stay framework-agnostic. Banning next/* + react keeps the
