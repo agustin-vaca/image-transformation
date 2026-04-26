@@ -8,7 +8,7 @@
 
 ## Status
 
-🚧 **Scaffolding done; tracer-bullet in progress.** The Next.js app builds, lints, type-checks, tests, and deploys to Vercel. Real image pipeline is being added incrementally per the issue backlog.
+✅ **Core flow shipped.** Upload → background removal → horizontal flip → R2 upload → unique share link → download → delete → 24h TTL. Live on Vercel; 34 tests green.
 
 - 📄 [Product Requirements Document](docs/PRD.md)
 - 📋 [Issue backlog](docs/issues/todo/) · [done](docs/issues/done/)
