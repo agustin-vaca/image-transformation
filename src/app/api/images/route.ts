@@ -38,9 +38,12 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
     }
 
     const buffer = Buffer.from(await entry.arrayBuffer());
-    const origin = new URL(request.url).origin;
-    const storage = createR2StorageFromEnv(getEnv());
-    const processor = new R2ImageProcessor(origin, storage);
+    const env = getEnv();
+    // Build shareUrl from the validated APP_BASE_URL — the request's Host
+    // header is spoofable behind a misconfigured proxy.
+    const appBaseUrl = env.APP_BASE_URL.replace(/\/+$/, "");
+    const storage = createR2StorageFromEnv(env);
+    const processor = new R2ImageProcessor(appBaseUrl, storage);
     const dto = await processor.process(buffer, entry.type, entry.name);
 
     return NextResponse.json({ ok: true, data: dto });
