@@ -31,10 +31,6 @@ export interface GetResult {
 const KEY_PREFIX = "images/";
 const ID_LENGTH = 12;
 
-/**
- * Deep module: hides Cloudflare R2 + the S3 SDK behind put/get/delete.
- * Callers never see `S3Client`, bucket names, or object keys.
- */
 export class R2Storage {
   private readonly client: S3Client;
   private readonly bucket: string;
@@ -93,15 +89,6 @@ export class R2Storage {
       if (err instanceof NoSuchKey) {
         throw new ApiError(ErrorCodes.NOT_FOUND, "Image not found.");
       }
-      // Some R2 responses surface 404 as a generic error with name.
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "name" in err &&
-        (err as { name: string }).name === "NoSuchKey"
-      ) {
-        throw new ApiError(ErrorCodes.NOT_FOUND, "Image not found.");
-      }
       console.error("R2 get failed:", err);
       throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to fetch image.");
     }
@@ -115,26 +102,14 @@ export class R2Storage {
         new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
       );
     } catch (err) {
-      // S3/R2 normally returns 204 even for missing keys, but defend anyway.
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "name" in err &&
-        (err as { name: string }).name === "NoSuchKey"
-      ) {
-        return;
-      }
+      if (err instanceof NoSuchKey) return;
       console.error("R2 delete failed:", err);
       throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to delete image.");
     }
   }
 }
 
-/**
- * Build an `R2Storage` from validated env vars. Kept separate from the class
- * so tests can construct an instance with arbitrary config without touching
- * `process.env`.
- */
+/** Build an `R2Storage` from validated env vars. */
 export function createR2StorageFromEnv(env: {
   R2_ACCOUNT_ID: string;
   R2_ACCESS_KEY_ID: string;
