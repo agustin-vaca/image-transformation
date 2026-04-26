@@ -2,8 +2,10 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   NoSuchKey,
+  NotFound,
 } from "@aws-sdk/client-s3";
 import { nanoid } from "nanoid";
 import { ApiError, ErrorCodes } from "@/server/errors";
@@ -26,6 +28,12 @@ export interface GetResult {
   stream: ReadableStream<Uint8Array>;
   mime: string;
   bytes: number;
+}
+
+export interface HeadResult {
+  mime: string;
+  bytes: number;
+  lastModified: Date;
 }
 
 const KEY_PREFIX = "images/";
@@ -90,6 +98,27 @@ export class R2Storage {
         throw new ApiError(ErrorCodes.NOT_FOUND, "Image not found.");
       }
       console.error("R2 get failed:", err);
+      throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to fetch image.");
+    }
+  }
+
+  /** Cheap existence + metadata probe (no body bytes). */
+  async head(id: string): Promise<HeadResult> {
+    const key = KEY_PREFIX + id;
+    try {
+      const out = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return {
+        mime: out.ContentType ?? "application/octet-stream",
+        bytes: out.ContentLength ?? 0,
+        lastModified: out.LastModified ?? new Date(),
+      };
+    } catch (err) {
+      if (err instanceof NotFound || err instanceof NoSuchKey) {
+        throw new ApiError(ErrorCodes.NOT_FOUND, "Image not found.");
+      }
+      console.error("R2 head failed:", err);
       throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to fetch image.");
     }
   }

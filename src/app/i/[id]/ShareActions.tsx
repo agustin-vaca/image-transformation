@@ -1,0 +1,133 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import type { ApiResponse } from "@/lib/api";
+
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return "expired";
+  const totalSeconds = Math.floor(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+export function ShareActions({
+  id,
+  publicUrl,
+  shareUrl,
+  expiresAtIso,
+}: {
+  id: string;
+  publicUrl: string;
+  shareUrl: string;
+  expiresAtIso: string;
+}) {
+  const router = useRouter();
+  const expiresAt = new Date(expiresAtIso).getTime();
+  const [now, setNow] = useState(() => Date.now());
+  const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const remaining = expiresAt - now;
+  const expired = remaining <= 0;
+
+  const copyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const downloadImage = async () => {
+    const res = await fetch(publicUrl);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `image-${id}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  const deleteImage = async () => {
+    if (!confirm("Delete this image? This cannot be undone.")) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/images/${id}`, { method: "DELETE" });
+      const json = (await res.json()) as ApiResponse<unknown>;
+      if (!json.ok) {
+        setError(json.error.message);
+        setDeleting(false);
+        return;
+      }
+      router.replace("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 text-sm">
+      <div className="flex items-center justify-between text-xs text-zinc-500">
+        <span>
+          Auto-deletes in{" "}
+          <span className="font-mono text-zinc-700 dark:text-zinc-300">
+            {formatRemaining(remaining)}
+          </span>
+        </span>
+        <span>{new Date(expiresAt).toLocaleTimeString()}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={copyShareLink}
+          className="flex-1 min-w-[8rem] rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {copied ? "Copied!" : "Copy share link"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void downloadImage()}
+          disabled={expired}
+          className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
+        >
+          Download
+        </button>
+        <button
+          type="button"
+          onClick={() => void deleteImage()}
+          disabled={deleting}
+          className="flex-1 min-w-[8rem] rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+        >
+          {deleting ? "Deleting…" : "Delete now"}
+        </button>
+      </div>
+      <Link
+        href="/"
+        className="text-center text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+      >
+        ← Transform another image
+      </Link>
+      {error && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,12 +1,15 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import { headers } from "next/headers";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
+import { computeExpiresAt, isExpired } from "@/server/expiry";
 import { ApiError, ErrorCodes } from "@/server/errors";
-import { DownloadButton } from "./DownloadButton";
+import { ShareActions } from "./ShareActions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
 
 export default async function ImagePage({
   params,
@@ -14,16 +17,15 @@ export default async function ImagePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-
-  if (!/^[A-Za-z0-9_-]{6,32}$/.test(id)) notFound();
+  if (!ID_RE.test(id)) notFound();
 
   const env = getEnv();
   const storage = createR2StorageFromEnv(env);
 
+  let lastModified: Date;
   try {
-    const result = await storage.get(id);
-    // Drain the stream we don't need; we only used get() as an existence probe.
-    await result.stream.cancel();
+    const meta = await storage.head(id);
+    lastModified = meta.lastModified;
   } catch (err) {
     if (err instanceof ApiError && err.code === ErrorCodes.NOT_FOUND) {
       notFound();
@@ -31,7 +33,14 @@ export default async function ImagePage({
     throw err;
   }
 
+  const expiresAt = computeExpiresAt(lastModified);
+  if (isExpired(expiresAt)) notFound();
+
   const publicUrl = `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/images/${id}`;
+  const h = await headers();
+  const host = h.get("host") ?? "";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const shareUrl = `${proto}://${host}/i/${id}`;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 bg-white dark:bg-black">
@@ -42,19 +51,12 @@ export default async function ImagePage({
           alt="Shared image"
           className="w-full rounded-lg bg-zinc-100 dark:bg-zinc-900"
         />
-        <div className="flex flex-wrap gap-2">
-          <DownloadButton
-            url={publicUrl}
-            filename={`image-${id}.png`}
-            className="flex-1 min-w-[8rem] rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          />
-          <Link
-            href="/"
-            className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
-          >
-            Transform another
-          </Link>
-        </div>
+        <ShareActions
+          id={id}
+          publicUrl={publicUrl}
+          shareUrl={shareUrl}
+          expiresAtIso={expiresAt.toISOString()}
+        />
       </div>
     </main>
   );
