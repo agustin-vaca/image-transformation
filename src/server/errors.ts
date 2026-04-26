@@ -19,6 +19,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   STORAGE_FAILED: 502,
   NOT_FOUND: 404,
   EXPIRED: 410,
+  UNAUTHORIZED: 401,
   INTERNAL: 500,
 };
 

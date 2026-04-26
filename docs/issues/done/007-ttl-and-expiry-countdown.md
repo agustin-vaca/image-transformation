@@ -1,7 +1,7 @@
 ---
 id: 007
 title: 30-minute TTL + timezone-aware expiry countdown
-status: todo
+status: done
 blocked_by: [004]
 slice: vertical
 owner: unassigned
@@ -43,5 +43,20 @@ Server stamps `expiresAt`, surfaces it in `ImageDTO`, enforces it on read; clien
 - Geolocation permission (explicitly rejected — see PRD §4.1).
 - The shareable landing page itself (see issue 008).
 
-## Retro (fill on completion)
-_TBD_
+## Retro
+Shipped across PR #6 + post-merge polish:
+- `RETENTION_MS = 30 * 60 * 1000` lives in `src/server/expiry.ts`.
+- `expiresAt` is **derived from R2's `LastModified`** at read time via
+  `R2Storage.head()` — no DB needed. Trade-off: every `/i/[id]` render
+  costs one R2 HEAD; in exchange, expiry "just works" even after restarts.
+- `/i/[id]` returns `notFound()` (custom funny page) when expired; we did
+  **not** wire a separate `EXPIRED` error code on a GET endpoint because
+  there's no GET JSON endpoint anymore — the page is the canonical
+  consumer.
+- Countdown ticks every 1s, anchored to absolute `expiresAt` (survives
+  tab sleep). The original spec called for `prefers-reduced-motion`
+  handling; on review, a 1Hz numeric counter is not the kind of motion
+  WCAG 2.3.3 targets, so we dropped that branch as cargo-culted.
+- Local-time + IANA timezone label rendered with
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`; falls back to "UTC".
+- Cleanup of expired R2 objects is tracked separately in issue 009.

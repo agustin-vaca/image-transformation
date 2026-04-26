@@ -8,9 +8,21 @@ import type { ApiResponse } from "@/lib/api";
 function formatRemaining(ms: number): string {
   if (ms <= 0) return "expired";
   const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}h ${m.toString().padStart(2, "0")}m ${s.toString().padStart(2, "0")}s`;
+  }
   return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+function resolveTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 export function ShareActions({
@@ -30,6 +42,10 @@ export function ShareActions({
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Lazy init so SSR uses "UTC"; client uses the browser's IANA zone.
+  const [timeZone] = useState(() =>
+    typeof window === "undefined" ? "UTC" : resolveTimeZone(),
+  );
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -38,6 +54,13 @@ export function ShareActions({
 
   const remaining = expiresAt - now;
   const expired = remaining <= 0;
+  const expiryLocal = new Date(expiresAt).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const tzLabel = timeZone === "UTC" ? "UTC" : timeZone;
 
   const copyShareLink = async () => {
     try {
@@ -90,7 +113,9 @@ export function ShareActions({
             {formatRemaining(remaining)}
           </span>
         </span>
-        <span>{new Date(expiresAt).toLocaleTimeString()}</span>
+        <span title={tzLabel}>
+          {expiryLocal} <span className="text-zinc-400">({tzLabel})</span>
+        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button

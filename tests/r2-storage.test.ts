@@ -41,7 +41,16 @@ vi.mock("@aws-sdk/client-s3", () => {
       __type: "Delete",
       input,
     })),
+    HeadObjectCommand: vi.fn().mockImplementation((input) => ({
+      __type: "Head",
+      input,
+    })),
+    ListObjectsV2Command: vi.fn().mockImplementation((input) => ({
+      __type: "List",
+      input,
+    })),
     NoSuchKey: FakeNoSuchKey,
+    NotFound: FakeNoSuchKey,
   };
 });
 
@@ -207,5 +216,49 @@ describe("R2Storage.delete", () => {
     await expect(storage.delete("x")).rejects.toMatchObject({
       code: ErrorCodes.STORAGE_FAILED,
     });
+  });
+});
+
+describe("R2Storage.listExpired", () => {
+  it("returns ids whose LastModified is older than the cutoff", async () => {
+    const cutoff = new Date("2024-01-01T12:00:00Z");
+    sendMock.mockResolvedValueOnce({
+      Contents: [
+        { Key: "images/old1", LastModified: new Date("2024-01-01T11:00:00Z") },
+        { Key: "images/fresh", LastModified: new Date("2024-01-01T12:30:00Z") },
+        { Key: "images/old2", LastModified: new Date("2024-01-01T10:00:00Z") },
+      ],
+      IsTruncated: false,
+    });
+    const storage = new R2Storage(config);
+
+    const ids = await storage.listExpired(cutoff);
+
+    expect(ids).toEqual(["old1", "old2"]);
+  });
+
+  it("paginates through ContinuationToken", async () => {
+    const cutoff = new Date("2024-01-01T12:00:00Z");
+    sendMock
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: "images/a", LastModified: new Date("2024-01-01T11:00:00Z") },
+        ],
+        IsTruncated: true,
+        NextContinuationToken: "TOKEN",
+      })
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: "images/b", LastModified: new Date("2024-01-01T11:30:00Z") },
+        ],
+        IsTruncated: false,
+      });
+    const storage = new R2Storage(config);
+
+    const ids = await storage.listExpired(cutoff);
+
+    expect(ids).toEqual(["a", "b"]);
+    const secondCall = sendMock.mock.calls[1]?.[0];
+    expect(secondCall?.input.ContinuationToken).toBe("TOKEN");
   });
 });
