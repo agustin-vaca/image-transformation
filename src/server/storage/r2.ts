@@ -4,6 +4,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   NotFound,
 } from "@aws-sdk/client-s3";
@@ -135,6 +136,38 @@ export class R2Storage {
       console.error("R2 delete failed:", err);
       throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to delete image.");
     }
+  }
+
+  /**
+   * List ids whose `LastModified` is older than `olderThan`. Paginates through
+   * the bucket — the cron job calls this every few minutes so the page size
+   * doesn't need to be tuned.
+   */
+  async listExpired(olderThan: Date): Promise<string[]> {
+    const ids: string[] = [];
+    let continuationToken: string | undefined;
+    try {
+      do {
+        const out = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: KEY_PREFIX,
+            ContinuationToken: continuationToken,
+          }),
+        );
+        for (const obj of out.Contents ?? []) {
+          if (!obj.Key || !obj.LastModified) continue;
+          if (obj.LastModified.getTime() < olderThan.getTime()) {
+            ids.push(obj.Key.slice(KEY_PREFIX.length));
+          }
+        }
+        continuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
+      } while (continuationToken);
+    } catch (err) {
+      console.error("R2 list failed:", err);
+      throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to list images.");
+    }
+    return ids;
   }
 }
 
