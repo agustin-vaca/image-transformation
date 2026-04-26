@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+// TEMPORARY: surface Vercel's per-function size breakdown in the build log
+// so we can see what's pushing /api/images over the 250 MB unzipped limit.
+// Drop this once the deploy is green.
+process.env.VERCEL_ANALYZE_BUILD_OUTPUT = "1";
+
 const nextConfig: NextConfig = {
   // Keep these as external CommonJS requires in the server bundle so their
   // native bindings (onnxruntime-node *.node, sharp *.node) and bundled
