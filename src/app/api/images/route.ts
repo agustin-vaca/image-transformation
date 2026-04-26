@@ -4,13 +4,12 @@ import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { getEnv } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
-import { ACCEPTED_MIME_TYPES } from "@/lib/api";
+import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
 
 export const runtime = "nodejs";
 // BG removal can take >10s on cold starts; opt out of Vercel's 10s default.
 export const maxDuration = 60;
 
-const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_MIMES = new Set<string>(ACCEPTED_MIME_TYPES);
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse<ImageDTO>>> {
@@ -27,7 +26,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
         `Unsupported mime type: ${entry.type || "unknown"}`,
       );
     }
-    if (entry.size > MAX_BYTES) {
+    if (entry.size > MAX_UPLOAD_BYTES) {
       throw new ApiError(
         ErrorCodes.FILE_TOO_LARGE,
         `File exceeds 10 MB limit (${entry.size} bytes)`,

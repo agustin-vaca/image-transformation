@@ -1,8 +1,8 @@
 # Product Requirements Document — Image Transformation App
 
-> Status: **DRAFT** — fill in remaining `_TBD_` items during the "Grill Me" phase before any code is written.
+> Status: **SHIPPED** \u2014 the live app implements this spec end-to-end. See [docs/issues/done/](issues/done/) for the slice-by-slice history and any deviations.
 > Owner: @agustin-vaca
-> Last updated: 2026-04-25
+> Last updated: 2026-04-26
 
 ---
 
@@ -120,7 +120,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 
 - Server stamps `expiresAt = createdAt + 30m` and returns it in the `ImageDTO`.
 - TTL is the **only** thing that deletes. `GET` requests — from users, friends, or unfurlers — never trigger deletion.
-- A scheduled cleanup (cron / scheduled function / lazy-on-read — _TBD_ §8) removes any object past `expiresAt` from storage.
+- A scheduled cleanup (Vercel Cron — see §8) **and** a lazy-on-read check both remove any object past `expiresAt` from storage.
 - After expiry, `GET /api/images/:id`, `/i/:id`, and `/api/images/:id/download` all return a friendly `EXPIRED` (gone) state.
 - Error states are explicit (toast + inline), never silent.
 
@@ -132,7 +132,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 |----------------------|-------------------------------------------------|-----|
 | Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped in a `BackgroundRemover` deep module so we can swap to a SaaS later without touching callers. |
 | Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
-| Metadata store       | **SQLite via `better-sqlite3`** (file on disk in dev; mounted volume in prod) | One file, zero infra, perfect fit for short-lived ephemeral rows. Easy to swap for Postgres later — access goes through one `MetadataStore` module. |
+| Metadata store       | **None** \u2014 R2 object metadata (`LastModified`) is the source of truth for `expiresAt` | Eliminates a moving part. Storage already returns the timestamp we need; adding a database would just duplicate it. Easy to introduce later behind a `MetadataStore` module if richer queries are needed. |
 | Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
 | Hosting (deploy)     | **Vercel**                                      | Native Next.js App Router, built-in Cron, generous free tier, `git push` deploy. |
 
@@ -217,14 +217,13 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 │       └── cron/cleanup/route.ts      # invoked by Vercel Cron daily (Hobby cap)
 ├── server/                           # framework-agnostic, zero next/* imports
 │   ├── processor/
-│   │   ├── index.ts                   # ImageProcessor (deep module)
+│   │   ├── index.ts                   # ImageProcessor interface (deep module)
+│   │   ├── r2-image-processor.ts       # bg-removal → flip → R2 upload
 │   │   ├── bg-removal.ts              # @imgly wrapper
 │   │   └── flip.ts                    # sharp().flop()
 │   ├── storage/
 │   │   └── r2.ts                      # @aws-sdk/client-s3 against R2
-│   ├── metadata/
-│   │   └── sqlite.ts                  # better-sqlite3 wrapper
-│   ├── expiry.ts                      # RETENTION_MS, isExpired()
+│   ├── expiry.ts                      # RETENTION_MS, computeExpiresAt(), isExpired()
 │   ├── errors.ts                      # ApiError + error codes
 │   └── env.ts                         # zod-validated env, throws at boot
 ├── components/                       # React components
@@ -242,16 +241,16 @@ Following Ousterhout (and [.github/copilot-instructions.md §4.4](../.github/cop
 
 ```ts
 interface ImageProcessor { process(buf: Buffer, mime: string, originalName: string): Promise<ImageDTO>; }
-interface BackgroundRemover { remove(buf: Buffer): Promise<Buffer>; }
+interface BackgroundRemover { remove(buf: Buffer, mime: string): Promise<Buffer>; }
 interface Flipper { flip(buf: Buffer): Promise<Buffer>; }
 interface Storage { put(buf: Buffer, mime: string): Promise<{ id: string; previewUrl: string }>;
                     get(id: string): Promise<{ stream: ReadableStream; mime: string; bytes: number }>;
+                    head(id: string): Promise<{ lastModified: Date; bytes: number; mime: string }>;
+                    listExpired(cutoff: Date): Promise<string[]>;
                     delete(id: string): Promise<void>; }
-interface MetadataStore { create(dto: ImageDTO): Promise<void>;
-                          get(id: string): Promise<ImageDTO | null>;
-                          listExpired(now: Date): Promise<string[]>;
-                          delete(id: string): Promise<void>; }
 ```
+
+No `MetadataStore` exists — R2's `LastModified` header is the source of truth for `expiresAt`. If richer queries are ever needed, the interface above is where a metadata store would slot in.
 
 Route Handlers wire these together; nothing in `server/` imports from `next/*`.
 

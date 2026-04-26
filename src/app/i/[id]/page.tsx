@@ -4,13 +4,12 @@ import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
 import { ApiError, ErrorCodes } from "@/server/errors";
+import { IMAGE_ID_RE } from "@/lib/api";
 import { PageShell } from "@/components/PageShell";
 import { ShareActions } from "./ShareActions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
 
 export async function generateMetadata({
   params,
@@ -18,7 +17,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  if (!ID_RE.test(id)) return {};
+  if (!IMAGE_ID_RE.test(id)) return {};
   const env = getEnv();
   const publicUrl = `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/images/${id}`;
   // Use the validated APP_BASE_URL so the canonical share URL can't be
@@ -53,7 +52,7 @@ export default async function ImagePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  if (!ID_RE.test(id)) notFound();
+  if (!IMAGE_ID_RE.test(id)) notFound();
 
   const env = getEnv();
   const storage = createR2StorageFromEnv(env);

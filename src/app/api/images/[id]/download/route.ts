@@ -3,11 +3,10 @@ import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
+import { IMAGE_ID_RE } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
@@ -21,7 +20,7 @@ export async function GET(
 ) {
   try {
     const { id } = await ctx.params;
-    if (!ID_RE.test(id)) {
+    if (!IMAGE_ID_RE.test(id)) {
       throw new ApiError(ErrorCodes.INVALID_FILE, "Invalid image id.");
     }
 

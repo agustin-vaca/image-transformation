@@ -4,11 +4,10 @@ import { getEnv } from "@/server/env";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
+import { IMAGE_ID_RE } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
 
 export async function GET(
   _request: Request,
@@ -16,7 +15,7 @@ export async function GET(
 ): Promise<NextResponse<ApiResponse<ImageDTO>>> {
   try {
     const { id } = await ctx.params;
-    if (!ID_RE.test(id)) {
+    if (!IMAGE_ID_RE.test(id)) {
       throw new ApiError(ErrorCodes.INVALID_FILE, "Invalid image id.");
     }
     const env = getEnv();
@@ -55,7 +54,7 @@ export async function DELETE(
 ): Promise<NextResponse<ApiResponse<{ id: string }>>> {
   try {
     const { id } = await ctx.params;
-    if (!ID_RE.test(id)) {
+    if (!IMAGE_ID_RE.test(id)) {
       throw new ApiError(ErrorCodes.INVALID_FILE, "Invalid image id.");
     }
     const storage = createR2StorageFromEnv(getEnv());
