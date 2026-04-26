@@ -111,7 +111,7 @@ export function Uploader() {
         : "";
 
   return (
-    <div className="w-full max-w-xl mx-auto flex flex-col gap-6">
+    <div className="w-full flex flex-col gap-6">
       <label
         onDragOver={(e) => {
           e.preventDefault();
@@ -119,12 +119,12 @@ export function Uploader() {
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-16 text-center transition focus-within:outline-none focus-within:ring-2 focus-within:ring-zinc-900 focus-within:ring-offset-2 dark:focus-within:ring-zinc-100 dark:focus-within:ring-offset-black ${
+        className={`upload-zone focus-ring-within flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-16 text-center bg-surface-container-lowest ${
           busy
-            ? "border-zinc-300 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 cursor-wait"
+            ? "is-busy border-outline-variant cursor-wait"
             : dragOver
-              ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900 cursor-copy"
-              : "border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:bg-zinc-900 cursor-pointer"
+              ? "is-drag border-primary cursor-copy"
+              : "border-primary/30 cursor-pointer"
         }`}
       >
         <input
@@ -138,12 +138,12 @@ export function Uploader() {
         {busy ? (
           <div className="flex flex-col items-center gap-3 w-full">
             <Spinner />
-            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="text-sm text-on-surface-variant">
               {statusText}
             </span>
             {status.kind === "uploading" && (
               <div
-                className="w-full max-w-xs h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden"
+                className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
                 role="progressbar"
                 aria-valuemin={0}
                 aria-valuemax={100}
@@ -151,7 +151,7 @@ export function Uploader() {
                 aria-label="Upload progress"
               >
                 <div
-                  className="h-full bg-zinc-900 dark:bg-zinc-100 transition-[width] duration-150"
+                  className="h-full bg-primary transition-[width] duration-150"
                   style={{ width: `${status.progress}%` }}
                 />
               </div>
@@ -159,11 +159,22 @@ export function Uploader() {
           </div>
         ) : (
           <>
-            <UploadIcon />
-            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-              {dragOver ? "Drop to upload" : "Click or drag an image to upload"}
+            <div className="rounded-full bg-primary-fixed p-5 text-primary">
+              <UploadIcon />
+            </div>
+            <span className="text-xl font-bold text-on-surface">
+              {dragOver ? "Drop to upload" : "Drop your image here"}
             </span>
-            <span className="text-xs text-zinc-500 dark:text-zinc-500">
+            <span className="text-sm text-on-surface-variant">
+              or click to browse
+            </span>
+            <span
+              className="mt-3 inline-flex items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-[0_4px_0_0_var(--color-primary-press)] transition-all active:translate-y-[2px] active:shadow-none"
+              aria-hidden="true"
+            >
+              Choose image
+            </span>
+            <span className="mt-2 text-xs text-on-surface-variant">
               PNG, JPEG, or WebP · up to 10 MB
             </span>
           </>
@@ -178,7 +189,7 @@ export function Uploader() {
       {status.kind === "error" && (
         <div
           role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+          className="rounded-lg border border-error bg-error-container px-4 py-3 text-sm text-on-error-container"
         >
           <strong className="font-semibold">Upload failed:</strong>{" "}
           {status.message}
@@ -191,7 +202,7 @@ export function Uploader() {
 function Spinner() {
   return (
     <svg
-      className="h-6 w-6 animate-spin text-zinc-500"
+      className="h-6 w-6 animate-spin text-primary"
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
@@ -216,11 +227,11 @@ function Spinner() {
 function UploadIcon() {
   return (
     <svg
-      className="h-8 w-8 text-zinc-400"
+      className="h-10 w-10"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.75"
       aria-hidden="true"
     >
       <path

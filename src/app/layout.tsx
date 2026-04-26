@@ -1,21 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Manrope — body + headlines. Inter at weight 500 — used for monospaced
+// numerals (timer / metadata) per Stitch design system §Typography.
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const interMono = Inter({
+  variable: "--font-inter-mono",
   subsets: ["latin"],
+  weight: ["500"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Image Transformation",
+  title: "MirrorMe — Say hi to yourself.",
   description:
-    "Upload an image — background removed and horizontally flipped. Shareable link, 24-hour TTL.",
+    "Drop in a photo. We remove the background and flip it horizontally. That's it. Shareable link, 24-hour TTL.",
 };
 
 export default function RootLayout({
@@ -26,7 +32,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${manrope.variable} ${interMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
