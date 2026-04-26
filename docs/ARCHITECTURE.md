@@ -104,9 +104,9 @@ flowchart TB
     cleanup --> env
     storage --> env
 
-    classDef serverNode fill:#eef,stroke:#446
-    classDef appNode fill:#fef,stroke:#646
-    classDef libNode fill:#efe,stroke:#464
+    classDef serverNode fill:#3949ab,stroke:#1a237e,color:#fff
+    classDef appNode fill:#ad1457,stroke:#560027,color:#fff
+    classDef libNode fill:#2e7d32,stroke:#1b5e20,color:#fff
     class proc,bg,flip,storage,env,errors,expiry serverNode
     class page,ipage,upload,meta,download,cleanup appNode
     class api libNode
@@ -131,21 +131,21 @@ sequenceDiagram
     participant R2 as Cloudflare R2
 
     U->>UI: drop image
-    Note over UI: client-side check<br/>(mime, &lt;10 MB)
+    Note over UI: client-side check<br/>(mime, under 10 MB)
     UI->>API: multipart/form-data
-    Note over API: server-side check<br/>(mime, &lt;10 MB)
+    Note over API: server-side check<br/>(mime, under 10 MB)
     API->>P: process(buf, mime, name)
     P->>BG: remove(buf, mime)
     BG-->>P: PNG with alpha
     P->>F: flip(png)
     F-->>P: mirrored PNG
-    P->>S: put(png, "image/png")
-    S->>R2: PutObject(images/&lt;nanoid&gt;)
+    P->>S: put(png, image/png)
+    S->>R2: PutObject(images/[nanoid])
     R2-->>S: ok
-    S-->>P: { id, previewUrl }
+    S-->>P: id, previewUrl
     P-->>API: ImageDTO
-    API-->>UI: { ok: true, data: ImageDTO }
-    UI->>U: router.push("/i/&lt;id&gt;")
+    API-->>UI: ok=true, data=ImageDTO
+    UI->>U: router.push to /i/[id]
 ```
 
 Every error along the way is mapped to a typed `ErrorCode` (`INVALID_FILE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, …) by `toErrorResponse()` so the underlying error message never leaks to the client.
@@ -166,27 +166,27 @@ sequenceDiagram
     participant DEL as DELETE /api/images/[id]
     participant R2 as Cloudflare R2
 
-    V->>SP: GET /i/&lt;id&gt;
+    V->>SP: GET /i/[id]
     SP->>S: head(id)
     S->>R2: HeadObject
-    R2-->>S: { lastModified, bytes, mime }
+    R2-->>S: lastModified, bytes, mime
     S-->>SP: meta
     Note over SP: expiresAt = lastModified + 24h<br/>404 if expired or missing
     SP-->>V: HTML (preview + ShareActions)
 
-    V->>DL: GET /api/images/&lt;id&gt;/download
-    DL->>S: head(id) → enforce TTL
+    V->>DL: GET /api/images/[id]/download
+    DL->>S: head(id) - enforce TTL
     DL->>S: get(id)
     S->>R2: GetObject
     R2-->>S: stream
     S-->>DL: stream + mime
-    DL-->>V: 200 + Content-Disposition: attachment
+    DL-->>V: 200 + Content-Disposition attachment
 
-    V->>DEL: DELETE /api/images/&lt;id&gt;
+    V->>DEL: DELETE /api/images/[id]
     DEL->>S: delete(id)
     S->>R2: DeleteObject (idempotent)
     R2-->>S: ok
-    DEL-->>V: { ok: true }
+    DEL-->>V: ok=true
 ```
 
 ---
@@ -201,7 +201,7 @@ flowchart LR
 
     subgraph lazy["Lazy-on-read (every GET)"]
         head[storage.head]
-        check{lastModified + 24h<br/>&lt; now?}
+        check{"lastModified + 24h<br/>before now?"}
         head --> check
         check -- yes --> nf[404 / EXPIRED]
         check -- no --> serve[serve image]
