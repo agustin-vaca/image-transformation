@@ -96,22 +96,23 @@ export function ShareActions({
 
   return (
     <div className="flex flex-col gap-3 text-sm">
-      <div className="flex items-center justify-between text-xs text-zinc-500">
+      <div className="flex items-center justify-between text-xs text-on-surface-variant">
         <span>
           Auto-deletes in{" "}
-          <span className="font-mono text-zinc-700 dark:text-zinc-300">
+          <span className="font-mono text-on-surface">
             {formatRemaining(remaining)}
           </span>
         </span>
         <span title={tzLabel}>
-          {expiryLocal} <span className="text-zinc-400">({tzLabel})</span>
+          {expiryLocal}{" "}
+          <span className="text-outline">({tzLabel})</span>
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={copyShareLink}
-          className="flex-1 min-w-[8rem] rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          className="focus-ring flex-1 min-w-[8rem] rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_0_0_var(--color-primary-press)] transition-all active:translate-y-[2px] active:shadow-none hover:bg-primary-hover"
         >
           {copied ? "Copied!" : "Copy share link"}
         </button>
@@ -119,14 +120,14 @@ export function ShareActions({
           <button
             type="button"
             disabled
-            className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-zinc-100"
+            className="flex-1 min-w-[8rem] rounded-lg border border-outline-variant px-4 py-2.5 text-center text-sm font-semibold text-on-surface-variant disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Download
           </button>
         ) : (
           <a
             href={downloadHref}
-            className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
+            className="focus-ring flex-1 min-w-[8rem] rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-2.5 text-center text-sm font-semibold text-on-surface transition hover:bg-surface-container-low"
           >
             Download
           </a>
@@ -135,19 +136,22 @@ export function ShareActions({
           type="button"
           onClick={() => void deleteImage()}
           disabled={deleting}
-          className="flex-1 min-w-[8rem] rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+          className="focus-ring flex-1 min-w-[8rem] rounded-lg border border-error px-4 py-2.5 text-sm font-semibold text-error transition hover:bg-error-container disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {deleting ? "Deleting…" : "Delete now"}
         </button>
       </div>
       <Link
         href="/"
-        className="text-center text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="text-center text-xs font-medium text-on-surface-variant transition hover:text-primary"
       >
         ← Transform another image
       </Link>
       {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <div
+          role="alert"
+          className="rounded-lg border border-error bg-error-container px-3 py-2 text-xs text-on-error-container"
+        >
           {error}
         </div>
       )}

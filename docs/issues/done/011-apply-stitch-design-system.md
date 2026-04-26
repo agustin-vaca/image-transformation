@@ -1,7 +1,7 @@
 ---
 id: 011
 title: Apply Stitch design system (Luminous SaaS) to existing pages
-status: todo
+status: done
 blocked_by: []
 slice: vertical
 owner: unassigned
@@ -84,3 +84,22 @@ the design system without changing any flow or adding marketing content.
 - Animations beyond the dropzone hover scale.
 
 ## Retro (fill on completion)
+Shipped via PR #11 stacked on PR #10. Highlights:
+- Tailwind v4 `@theme inline` + `:root` CSS variables turned out to be
+  a clean way to expose the Luminous palette without bloating the
+  config — semantic names (`primary`, `surface-container`,
+  `outline-variant`) on the utility side, hex values isolated in
+  `globals.css`.
+- Manrope at 800 weight gives the hero "Say hi to yourself." real
+  punch; Inter weight 500 with `font-variant-numeric: tabular-nums`
+  keeps the countdown timer from jittering.
+- Dropped dark mode entirely (issue allowed it). Cut ~30 dark-variant
+  classes per page; visual polish is now actually achievable in one
+  pass instead of two.
+- App name landed: **MirrorMe**.
+- "You can…" examples row replaced the marketing-grid temptation —
+  three short cards plus the "your story" disclaimer keep the page
+  honest about what the tool does (and what it doesn't).
+- Copilot review: 6 comments, 5 fixed (tabular nums, font rename,
+  3× `rel=noopener noreferrer`), 1 declined with reasoning (the
+  decorative "Choose image" span inside the `<label>`).

@@ -4,6 +4,7 @@ import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
 import { ApiError, ErrorCodes } from "@/server/errors";
+import { PageShell } from "@/components/PageShell";
 import { ShareActions } from "./ShareActions";
 
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function generateMetadata({
   // spoofed via Host / X-Forwarded-Proto headers behind a misconfigured
   // proxy.
   const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
-  const title = "Your transformed image";
+  const title = "Your mirror is ready · MirrorMe";
   const description =
     "Background removed and horizontally flipped. Auto-deletes 24 hours after upload.";
   return {
@@ -75,20 +76,30 @@ export default async function ImagePage({
   const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 bg-white dark:bg-black">
-      <div className="w-full max-w-2xl flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <PageShell>
+      <header className="flex flex-col gap-4">
+        <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-on-surface sm:text-5xl">
+          Done. Here&apos;s your mirror.
+        </h1>
+        <p className="text-lg leading-relaxed text-on-surface-variant">
+          Background removed. Flipped horizontally. Auto-deletes 24 hours
+          after upload.
+        </p>
+      </header>
+
+      <section className="flex flex-col gap-4 rounded-2xl border border-outline-variant bg-surface-container-lowest p-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={publicUrl}
-          alt="Shared image"
-          className="checker w-full rounded-lg"
+          alt="Your transformed image, background removed and flipped horizontally"
+          className="checker w-full rounded-xl"
         />
         <ShareActions
           id={id}
           shareUrl={shareUrl}
           expiresAtIso={expiresAt.toISOString()}
         />
-      </div>
-    </main>
+      </section>
+    </PageShell>
   );
 }
