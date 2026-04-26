@@ -6,11 +6,10 @@ import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 
 export const runtime = "nodejs";
-// Background removal does CPU-bound ONNX inference and can take >10s on
-// cold starts; opt out of Vercel's default 10s function cap.
+// BG removal can take >10s on cold starts; opt out of Vercel's 10s default.
 export const maxDuration = 60;
 
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB (PRD §3)
+const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_MIMES = new Set([
   "image/png",
   "image/jpeg",
