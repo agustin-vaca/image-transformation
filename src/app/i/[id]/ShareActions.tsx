@@ -112,13 +112,22 @@ export function ShareActions({
         >
           {copied ? "Copied!" : "Copy share link"}
         </button>
-        <a
-          href={expired ? undefined : downloadHref}
-          aria-disabled={expired}
-          className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 aria-disabled:opacity-50 aria-disabled:pointer-events-none dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
-        >
-          Download
-        </a>
+        {expired ? (
+          <button
+            type="button"
+            disabled
+            className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-zinc-100"
+          >
+            Download
+          </button>
+        ) : (
+          <a
+            href={downloadHref}
+            className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
+          >
+            Download
+          </a>
+        )}
         <button
           type="button"
           onClick={() => void deleteImage()}

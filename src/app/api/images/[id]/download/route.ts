@@ -37,15 +37,17 @@ export async function GET(
     const ext = EXT_BY_MIME[obj.mime] ?? "bin";
     const filename = `image-${id}.${ext}`;
 
-    return new Response(obj.stream, {
-      status: 200,
-      headers: {
-        "Content-Type": obj.mime,
-        "Content-Length": String(obj.bytes),
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "private, max-age=0, must-revalidate",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": obj.mime,
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "private, max-age=0, must-revalidate",
+    };
+    // Prefer the size from HEAD; fall back to GET's value if non-zero.
+    // Omit the header entirely when unknown so clients don't truncate.
+    const size = meta.bytes || obj.bytes;
+    if (size > 0) headers["Content-Length"] = String(size);
+
+    return new Response(obj.stream, { status: 200, headers });
   } catch (err) {
     const { status, body } = toErrorResponse(err);
     return NextResponse.json(body, { status });

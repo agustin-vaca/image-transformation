@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
@@ -21,10 +20,10 @@ export async function generateMetadata({
   if (!ID_RE.test(id)) return {};
   const env = getEnv();
   const publicUrl = `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/images/${id}`;
-  const h = await headers();
-  const host = h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const shareUrl = `${proto}://${host}/i/${id}`;
+  // Use the validated APP_BASE_URL so the canonical share URL can't be
+  // spoofed via Host / X-Forwarded-Proto headers behind a misconfigured
+  // proxy.
+  const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
   const title = "Your transformed image";
   const description =
     "Background removed and horizontally flipped. Auto-deletes 24 hours after upload.";
@@ -73,10 +72,7 @@ export default async function ImagePage({
   if (isExpired(expiresAt)) notFound();
 
   const publicUrl = `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/images/${id}`;
-  const h = await headers();
-  const host = h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const shareUrl = `${proto}://${host}/i/${id}`;
+  const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 bg-white dark:bg-black">
