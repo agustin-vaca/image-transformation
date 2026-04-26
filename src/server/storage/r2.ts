@@ -140,8 +140,8 @@ export class R2Storage {
 
   /**
    * List ids whose `LastModified` is older than `olderThan`. Paginates through
-   * the bucket — the cron job calls this every few minutes so the page size
-   * doesn't need to be tuned.
+   * the bucket. The cleanup cron runs once per day (Hobby tier cap) against a
+   * 24-hour retention window, so per-call result size stays small in practice.
    */
   async listExpired(olderThan: Date): Promise<string[]> {
     const ids: string[] = [];

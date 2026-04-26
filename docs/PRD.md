@@ -167,7 +167,7 @@ type ImageDTO = {
 
 Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `INTERNAL`.
 
-> Note: the `DELETE` endpoint is kept for the cleanup job and as a safety valve, but is **not** exposed in the UI — the UI relies on the 24-hour TTL. GETs never delete.
+> Note: `DELETE /api/images/:id` is exposed in the UI on `/i/[id]` (“Delete now” button) and is also called by the daily cleanup cron. GETs never delete.
 
 ---
 
