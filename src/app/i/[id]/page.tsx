@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
@@ -24,7 +25,7 @@ export async function generateMetadata({
   // spoofed via Host / X-Forwarded-Proto headers behind a misconfigured
   // proxy.
   const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
-  const title = "Your transformed image";
+  const title = "Your mirror is ready · MirrorMe";
   const description =
     "Background removed and horizontally flipped. Auto-deletes 24 hours after upload.";
   return {
@@ -75,19 +76,56 @@ export default async function ImagePage({
   const shareUrl = `${env.APP_BASE_URL.replace(/\/+$/, "")}/i/${id}`;
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6 bg-white dark:bg-black">
-      <div className="w-full max-w-2xl flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={publicUrl}
-          alt="Shared image"
-          className="checker w-full rounded-lg"
-        />
-        <ShareActions
-          id={id}
-          shareUrl={shareUrl}
-          expiresAtIso={expiresAt.toISOString()}
-        />
+    <main className="min-h-screen bg-surface text-on-surface">
+      <div className="mx-auto flex max-w-[720px] flex-col gap-12 px-8 py-8 sm:py-12">
+        <nav className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="text-2xl font-bold tracking-tight text-primary"
+          >
+            MirrorMe
+          </Link>
+        </nav>
+
+        <header className="flex flex-col gap-4">
+          <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-on-surface sm:text-5xl">
+            Done. Here&apos;s your mirror.
+          </h1>
+          <p className="text-lg leading-relaxed text-on-surface-variant">
+            Background removed. Flipped horizontally. Auto-deletes 24 hours
+            after upload.
+          </p>
+        </header>
+
+        <section className="flex flex-col gap-4 rounded-2xl border border-outline-variant bg-surface-container-lowest p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={publicUrl}
+            alt="Your transformed image, background removed and flipped horizontally"
+            className="checker w-full rounded-xl"
+          />
+          <ShareActions
+            id={id}
+            shareUrl={shareUrl}
+            expiresAtIso={expiresAt.toISOString()}
+          />
+        </section>
+
+        <footer className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-outline-variant pt-6 text-sm text-on-surface-variant sm:flex-row">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-on-surface">MirrorMe</span>
+            <span className="opacity-50">•</span>
+            <span>Auto-deletes 24 hours after upload</span>
+          </div>
+          <a
+            href="https://github.com/agustin-vaca/image-transformation"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold uppercase tracking-wider text-primary hover:underline"
+          >
+            GitHub
+          </a>
+        </footer>
       </div>
     </main>
   );

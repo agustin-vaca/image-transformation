@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>MirrorMe - Say hi to yourself.</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#c9e6ff",
+                    "background": "#faf8ff",
+                    "secondary-container": "#39b8fd",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb2b7",
+                    "secondary-fixed-dim": "#89ceff",
+                    "on-error-container": "#93000a",
+                    "outline": "#767586",
+                    "on-secondary-fixed": "#001e2f",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "surface-tint": "#494bd6",
+                    "on-tertiary": "#ffffff",
+                    "tertiary": "#b90538",
+                    "surface-container-high": "#e2e7ff",
+                    "surface-container-low": "#f2f3ff",
+                    "secondary": "#006591",
+                    "on-tertiary-fixed-variant": "#92002a",
+                    "on-secondary-fixed-variant": "#004c6e",
+                    "on-primary-fixed-variant": "#2f2ebe",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "inverse-on-surface": "#eef0ff",
+                    "on-background": "#131b2e",
+                    "error-container": "#ffdad6",
+                    "surface-container": "#eaedff",
+                    "on-surface": "#131b2e",
+                    "outline-variant": "#c7c4d7",
+                    "on-tertiary-fixed": "#40000d",
+                    "tertiary-container": "#dc2c4f",
+                    "surface-dim": "#d2d9f4",
+                    "surface": "#faf8ff",
+                    "primary-fixed": "#e1e0ff",
+                    "error": "#ba1a1a",
+                    "tertiary-fixed": "#ffdadb",
+                    "surface-bright": "#faf8ff",
+                    "primary": "#4648d4",
+                    "surface-variant": "#dae2fd",
+                    "on-secondary-container": "#004666",
+                    "inverse-primary": "#c0c1ff",
+                    "surface-container-highest": "#dae2fd",
+                    "on-surface-variant": "#464554",
+                    "on-primary-container": "#fffbff",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-container": "#fffbff",
+                    "primary-container": "#6063ee",
+                    "inverse-surface": "#283044",
+                    "on-primary-fixed": "#07006c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "20px",
+                    "base": "8px",
+                    "xl": "80px",
+                    "sm": "12px",
+                    "md": "24px",
+                    "lg": "48px",
+                    "xs": "4px",
+                    "container-margin": "32px"
+            },
+            "fontFamily": {
+                    "label-md": ["Manrope"],
+                    "body-md": ["Manrope"],
+                    "body-lg": ["Manrope"],
+                    "label-sm": ["Manrope"],
+                    "mono": ["Inter"],
+                    "h3": ["Manrope"],
+                    "h2": ["Manrope"],
+                    "body-sm": ["Manrope"],
+                    "h1": ["Manrope"]
+            },
+            "fontSize": {
+                    "label-md": ["14px", {"lineHeight": "1", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "mono": ["13px", {"lineHeight": "1.4", "fontWeight": "500"}],
+                    "h3": ["24px", {"lineHeight": "1.3", "fontWeight": "700"}],
+                    "h2": ["36px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "h1": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "800"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .upload-zone:hover {
+            background-color: rgba(70, 72, 212, 0.05);
+            transform: scale(1.01);
+            transition: all 0.2s ease-in-out;
+        }
+        .mirror-card::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: white;
+            z-index: 10;
+            box-shadow: 0 0 8px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md selection:bg-primary-fixed selection:text-on-primary-fixed">
+<div class="max-w-[720px] mx-auto px-container-margin py-md">
+<!-- TopBar -->
+<nav class="flex justify-between items-center py-base">
+<span class="text-primary font-h3 tracking-tighter" style="color: #6366F1;">MirrorMe</span>
+</nav>
+<!-- Hero Section -->
+<header class="mt-xl text-left space-y-md">
+<h1 class="font-h1 text-h1 text-on-background">Say hi to yourself.</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-[540px]">
+                Drop in a photo. We remove the background and flip it horizontally. That's it.
+            </p>
+</header>
+<!-- Upload Card -->
+<section class="mt-xl">
+<div class="upload-zone relative h-[420px] w-full rounded-xl border-2 border-dashed border-primary/30 flex flex-col items-center justify-center bg-surface-container-lowest cursor-pointer group">
+<div class="flex flex-col items-center gap-sm">
+<div class="p-md rounded-full bg-primary-fixed text-primary">
+<span class="material-symbols-outlined text-[48px]" data-icon="cloud_upload">cloud_upload</span>
+</div>
+<div class="text-center">
+<p class="font-h3 text-on-surface">Drop your image here</p>
+<p class="font-body-sm text-on-surface-variant">or click to browse</p>
+</div>
+<button class="mt-md bg-primary text-on-primary px-lg py-sm rounded-lg font-label-md shadow-[0_4px_0_0_#2f2ebe] active:translate-y-[2px] active:shadow-none transition-all">
+                        Choose image
+                    </button>
+</div>
+</div>
+</section>
+<!-- Steps Section -->
+<section class="mt-xl grid grid-cols-1 gap-md">
+<div class="flex items-start gap-md group">
+<span class="font-mono text-primary text-label-md mt-1">01</span>
+<div>
+<h4 class="font-label-md text-on-surface">Upload</h4>
+<p class="font-body-sm text-on-surface-variant">Pick file from your device or drop it in.</p>
+</div>
+</div>
+<div class="flex items-start gap-md group">
+<span class="font-mono text-primary text-label-md mt-1">02</span>
+<div>
+<h4 class="font-label-md text-on-surface">We mirror it</h4>
+<p class="font-body-sm text-on-surface-variant">Background removed and flipped instantly.</p>
+</div>
+</div>
+<div class="flex items-start gap-md group">
+<span class="font-mono text-primary text-label-md mt-1">03</span>
+<div>
+<h4 class="font-label-md text-on-surface">Share or download</h4>
+<p class="font-body-sm text-on-surface-variant">Get your high-res file or a 24h temporary link.</p>
+</div>
+</div>
+</section>
+<!-- Examples Section -->
+<section class="mt-xl space-y-lg">
+<div class="space-y-xs">
+<h3 class="font-h3 text-h3 text-on-background">Examples</h3>
+<p class="font-body-sm text-on-surface-variant">Each card shows the original on the left and its mirrored twin on the right.</p>
+</div>
+<div class="grid grid-cols-1 gap-lg">
+<!-- Card A -->
+<div class="space-y-sm">
+<div class="mirror-card relative aspect-square rounded-xl overflow-hidden shadow-sm border border-outline-variant bg-surface-container">
+<div class="flex h-full w-full">
+<div class="w-1/2 h-full bg-cover bg-center" data-alt="portrait of a young man waving cheerfully in bright studio lighting with a clean background" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCHa9EHEV8VEmiP39Q22_Fh37y93Gb5-YWDBls3nXOidHEQ5r2LTzOrqQRPgisQ24GfQNIGZLZNWaVNoqnEa_9m7iTvo_XM2kkm4R9ZGN23TdKw-Fn_HhlFy9ibeXoV1YpnQmzVLLaaMVofKsYTy_hnZ0MP0D7ROWDNgDKeYjU2nnzorTFiN_n6w6BcjNRhWWztc2HjqTh2UpniF1mTYz0mBVsPa3lmKpBzUXtdgCT1TbkgYkBlfjwA06oWUujP7L4JUocW8nYXz-SB')"></div>
+<div class="w-1/2 h-full bg-cover bg-center scale-x-[-1]" data-alt="the same portrait flipped horizontally — true mirror" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCHa9EHEV8VEmiP39Q22_Fh37y93Gb5-YWDBls3nXOidHEQ5r2LTzOrqQRPgisQ24GfQNIGZLZNWaVNoqnEa_9m7iTvo_XM2kkm4R9ZGN23TdKw-Fn_HhlFy9ibeXoV1YpnQmzVLLaaMVofKsYTy_hnZ0MP0D7ROWDNgDKeYjU2nnzorTFiN_n6w6BcjNRhWWztc2HjqTh2UpniF1mTYz0mBVsPa3lmKpBzUXtdgCT1TbkgYkBlfjwA06oWUujP7L4JUocW8nYXz-SB')"></div>
+</div>
+</div>
+<p class="font-label-md text-on-surface">Wave at yourself.</p>
+</div>
+<!-- Card B -->
+<div class="space-y-sm">
+<div class="mirror-card relative aspect-square rounded-xl overflow-hidden shadow-sm border border-outline-variant bg-surface-container">
+<div class="flex h-full w-full">
+<div class="w-1/2 h-full bg-cover bg-center" data-alt="close-up of a curious ginger cat staring directly into the camera with soft indoor lighting" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuChGrGoTM-JyCay1p1fVb62L9aKew4sOBVlVTvNda1bpjsiz49eqC7ta1UNGRu0wNkR3aglmjl6xn0PyDblL2TJ8MaXUP2qRO67mh2NRTppsV6i-TWSibFfGgA8Tsneg--2QTKUzvNLSMWrmpzgQtNGs9QsgSP8m50kZOm3JE1fu2DAm6bFliVSX6bDkdkaR9eASbWTmgNa47NIrgMm12B56RN0B8ZKOlCU6afatnzOtSGbPaoo97WiJwzOgtKRSSMoEnCjAgjnAIih')"></div>
+<div class="w-1/2 h-full bg-cover bg-center scale-x-[-1]" data-alt="the same cat flipped horizontally — true mirror" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuChGrGoTM-JyCay1p1fVb62L9aKew4sOBVlVTvNda1bpjsiz49eqC7ta1UNGRu0wNkR3aglmjl6xn0PyDblL2TJ8MaXUP2qRO67mh2NRTppsV6i-TWSibFfGgA8Tsneg--2QTKUzvNLSMWrmpzgQtNGs9QsgSP8m50kZOm3JE1fu2DAm6bFliVSX6bDkdkaR9eASbWTmgNa47NIrgMm12B56RN0B8ZKOlCU6afatnzOtSGbPaoo97WiJwzOgtKRSSMoEnCjAgjnAIih')"></div>
+</div>
+</div>
+<p class="font-label-md text-on-surface">Cat staredown.</p>
+</div>
+<!-- Card C -->
+<div class="space-y-sm">
+<div class="mirror-card relative aspect-square rounded-xl overflow-hidden shadow-sm border border-outline-variant bg-surface-container">
+<div class="flex h-full w-full">
+<div class="w-1/2 h-full bg-cover bg-center" data-alt="musician playing an acoustic guitar in a cozy sunlit room with warm ambient lighting" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCB3GrCINWNu4wWbw4vwJoa4MfN2MxjCMQveGOODORCUPl_6bI3apKjStl_7phH_uQA-QwNRqIDHi4-XXo7aiUrKDgDI_RwAlMNM8gFhc2nmcL-vL4ERHHE9i_8R6M-RB5JQxQXCsGjYK8HjDDTJn3J1REdL0R9omHlsY1hf6D_X_36u5Xpz9wpHmtD8j8aAjg9ytouEAQNdVNVoNEn9Su5s4riIUsYWH5-yJBzbVxLxaVpPFZZ09qZ11dizhvjG8Ueobsq70MezZ-Z')"></div>
+<div class="w-1/2 h-full bg-cover bg-center scale-x-[-1]" data-alt="the same guitarist flipped horizontally — true mirror" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCB3GrCINWNu4wWbw4vwJoa4MfN2MxjCMQveGOODORCUPl_6bI3apKjStl_7phH_uQA-QwNRqIDHi4-XXo7aiUrKDgDI_RwAlMNM8gFhc2nmcL-vL4ERHHE9i_8R6M-RB5JQxQXCsGjYK8HjDDTJn3J1REdL0R9omHlsY1hf6D_X_36u5Xpz9wpHmtD8j8aAjg9ytouEAQNdVNVoNEn9Su5s4riIUsYWH5-yJBzbVxLxaVpPFZZ09qZ11dizhvjG8Ueobsq70MezZ-Z')"></div>
+</div>
+</div>
+<p class="font-label-md text-on-surface">Two-person solo band.</p>
+</div>
+</div>
+<p class="font-body-sm text-on-surface-variant italic py-md">Disclaimer: Bring your own buddy.</p>
+</section>
+<!-- Footer -->
+<footer class="mt-xl mb-xl pt-lg border-t border-outline-variant">
+<div class="flex flex-col md:flex-row justify-between items-center gap-sm text-slate-500">
+<div class="flex items-center gap-base">
+<span class="font-label-md text-on-surface">MirrorMe</span>
+<span class="text-xs opacity-50">•</span>
+<span class="font-body-sm">Auto-deletes 24 hours after upload</span>
+</div>
+<div class="flex gap-md">
+<a class="font-label-sm text-primary hover:underline transition-all" href="#">GitHub</a>
+</div>
+</div>
+</footer>
+</div>
+</body></html>
