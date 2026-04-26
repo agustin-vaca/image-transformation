@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Image Transformation",
   description:
-    "Upload an image — background removed and horizontally flipped. Shareable link, 30-minute TTL.",
+    "Upload an image — background removed and horizontally flipped. Shareable link, 1-hour TTL.",
 };
 
 export default function RootLayout({

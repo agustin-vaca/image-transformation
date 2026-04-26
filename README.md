@@ -1,6 +1,6 @@
 # Image Transformation App
 
-> Upload an image → background removed + horizontally flipped → get a unique shareable link that expires in 30 minutes.
+> Upload an image → background removed + horizontally flipped → get a unique shareable link that expires in 1 hour.
 
 **Live URL:** https://image-transformation-two.vercel.app
 
