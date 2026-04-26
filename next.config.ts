@@ -41,9 +41,16 @@ const nextConfig: NextConfig = {
       // removal-node/dist/')`, i.e. it reads from the non-pnpm path
       // at runtime. Vercel's NFT does not recreate pnpm symlinks, so
       // we have to include that location explicitly too or readFile
-      // throws ENOENT on resources.json.
-      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**/*",
-      "./node_modules/@imgly/background-removal-node/dist/**/*",
+      // throws ENOENT on resources.json. We list multiple glob shapes
+      // because the weight chunks are *extension-less hash names* and
+      // some glob engines skip those with `**/*` — explicit hex globs
+      // and `**` (without trailing /*) cover all of them.
+      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
+      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/*",
+      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/[0-9a-f]*",
+      "./node_modules/@imgly/background-removal-node/dist/**",
+      "./node_modules/@imgly/background-removal-node/dist/*",
+      "./node_modules/@imgly/background-removal-node/dist/[0-9a-f]*",
     ],
   },
   outputFileTracingExcludes: {
