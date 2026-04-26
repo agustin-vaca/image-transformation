@@ -37,6 +37,11 @@
   "pnpm": {
     "overrides": {
       "sharp": "^0.34.5"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "sharp",
+      "onnxruntime-node",
+      "esbuild"
+    ]
   }
 }
