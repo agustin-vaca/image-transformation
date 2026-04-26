@@ -4,17 +4,10 @@ import { ApiError, ErrorCodes } from "@/server/errors";
 /**
  * Deep module: hides `@imgly/background-removal-node` behind a single
  * `.remove(buf)` call. Runs the U2-Net ONNX model locally — no API key,
- * no per-call cost. The library downloads model weights from a CDN on
- * first call and caches them to disk; subsequent calls are fully offline
- * and reuse the loaded model.
+ * no per-call cost. Model weights are loaded from disk (bundled into the
+ * deployed function) so first-call latency is just ONNX session init,
+ * not a CDN download.
  */
-// Where to fetch the ONNX model weights when they aren't bundled into the
-// deployment. We strip the bundled weights on Vercel (see scripts/prune-
-// imgly-weights.js) to stay under the 300 MB function size limit, so we
-// must point the library at imgly's CDN instead. Trailing slash matters.
-const IMGLY_CDN_PUBLIC_PATH =
-  "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/";
-
 export class BackgroundRemover {
   /**
    * Remove the background from an image buffer.
@@ -29,7 +22,7 @@ export class BackgroundRemover {
       // `new Uint8Array(buf)` produces a fresh ArrayBuffer-backed view, which
       // satisfies TS strict's BlobPart and avoids SharedArrayBuffer concerns.
       const blob = new Blob([new Uint8Array(buf)]);
-      const out = await removeBackground(blob, { publicPath: IMGLY_CDN_PUBLIC_PATH });
+      const out = await removeBackground(blob);
       return Buffer.from(await out.arrayBuffer());
     } catch (err) {
       // Log server-side; don't leak underlying library details to clients.
