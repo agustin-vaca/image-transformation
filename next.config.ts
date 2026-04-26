@@ -11,6 +11,12 @@ process.env.VERCEL_ANALYZE_BUILD_OUTPUT = "1";
 process.env.DEBUG_BG_ERRORS = "1";
 
 const nextConfig: NextConfig = {
+  // Make DEBUG_BG_ERRORS available at *runtime* inside the deployed
+  // serverless function (the process.env assignment above only affects the
+  // build process). Inlined as a public-but-server-readable env var.
+  env: {
+    DEBUG_BG_ERRORS: "1",
+  },
   // Keep these as external CommonJS requires in the server bundle so their
   // native bindings (onnxruntime-node *.node, sharp *.node) and bundled
   // assets resolve correctly inside Vercel's serverless functions.
