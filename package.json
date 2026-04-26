@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/prune-imgly-weights.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -37,6 +38,11 @@
   "pnpm": {
     "overrides": {
       "sharp": "^0.34.5"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "sharp",
+      "onnxruntime-node",
+      "esbuild"
+    ]
   }
 }

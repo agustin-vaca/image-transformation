@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-// Parsed eagerly at module load. Throws on missing/invalid env so we never
-// silently 500 at request time. See PRD §9.4.
+// Lazy + memoized so missing env doesn't fail Next's build-time page-data
+// collection (which has no runtime secrets). The first request that touches
+// env throws; the route handler turns it into a 500.
 const EnvSchema = z.object({
   R2_ACCOUNT_ID: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
@@ -25,9 +26,9 @@ function parseEnv(): Env {
   return parsed.data;
 }
 
-export const env: Env = parseEnv();
+let cached: Env | undefined;
 
-// Back-compat accessor; returns the same eagerly-parsed value.
 export function getEnv(): Env {
-  return env;
+  if (!cached) cached = parseEnv();
+  return cached;
 }
