@@ -1,16 +1,14 @@
 # Product Requirements Document — Image Transformation App
 
-> Status: **SHIPPED** \u2014 the live app implements this spec end-to-end. See [docs/issues/done/](issues/done/) for the slice-by-slice history and any deviations.
+> Status: **SHIPPED** the live app implements this spec end-to-end. See [docs/issues/done/](issues/done/) for the slice-by-slice history and any deviations.
 > Owner: @agustin-vaca
 > Last updated: 2026-04-26
 
 ---
 
-## 1. Problem & Goal
+## 1. Goal
 
-**Problem.** Removing the background from an image and flipping it sounds trivial, but the off-the-shelf tools that do it are either (a) bloated SaaS dashboards that demand a login, or (b) developer APIs with no UI. There's no zero-friction "drop an image, get a clean URL back" experience.
-
-**Goal.** Ship a live, **beautiful** single-purpose web app where a visitor can upload one image, watch it get its background removed and horizontally flipped with delightful progress feedback, and walk away with a unique public URL they (or anyone they share it with) can open to preview and download the result. The image self-destructs **24 hours after transformation**, with the exact local-time deletion moment shown up front.
+**Goal.** Ship a live single-purpose web app where a visitor can upload one image, watch it get its background removed and horizontally flipped with delightful progress feedback, and walk away with a unique public URL they (or anyone they share it with) can open to preview and download the result. Considering the free-tier resources used, the image self-destructs **24 hours after transformation**, with the local-time deletion moment shown up front.
 
 **North-star feeling.** "This feels like a tiny, polished tool — not a homework assignment."
 
@@ -130,7 +128,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 
 | Concern              | Choice                                          | Why |
 |----------------------|-------------------------------------------------|-----|
-| Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped in a `BackgroundRemover` deep module so we can swap to a SaaS later without touching callers. |
+| Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped behind a `BackgroundRemover` interface so we can swap to a SaaS later without touching callers. |
 | Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
 | Metadata store       | **None** \u2014 R2 object metadata (`LastModified`) is the source of truth for `expiresAt` | Eliminates a moving part. Storage already returns the timestamp we need; adding a database would just duplicate it. Easy to introduce later behind a `MetadataStore` module if richer queries are needed. |
 | Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
@@ -217,7 +215,7 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 │       └── cron/cleanup/route.ts      # invoked by Vercel Cron daily (Hobby cap)
 ├── server/                           # framework-agnostic, zero next/* imports
 │   ├── processor/
-│   │   ├── index.ts                   # ImageProcessor interface (deep module)
+│   │   ├── index.ts                   # ImageProcessor interface (single seam)
 │   │   ├── r2-image-processor.ts       # bg-removal → flip → R2 upload
 │   │   ├── bg-removal.ts              # @imgly wrapper
 │   │   └── flip.ts                    # sharp().flop()
@@ -235,9 +233,9 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 
 **Why Option C, not a monorepo:** for a single-screen single-consumer app, monorepo ceremony (two `package.json`, two CI configs, workspace tooling) costs ~2× boilerplate before any feature code. The `app/` vs `server/` split inside one repo gives us the same architectural clarity — if we ever need to extract a standalone API, it's `mv server/ ../api/` plus ~50 lines of HTTP framework, not a refactor.
 
-### 9.2 Deep modules
+### 9.2 Module boundaries
 
-Following Ousterhout (and [.github/copilot-instructions.md §4.4](../.github/copilot-instructions.md)), we expose **small interfaces hiding large functionality**:
+Each integration sits behind a **small public interface that hides a much larger implementation.** Callers depend on the shape, not on the SDK underneath. This keeps Route Handlers ignorant of `sharp`, `@imgly`, and the AWS S3 client — swapping providers means replacing one file, and tests can mock at the narrow interface instead of the underlying SDK.
 
 ```ts
 interface ImageProcessor { process(buf: Buffer, mime: string, originalName: string): Promise<ImageDTO>; }

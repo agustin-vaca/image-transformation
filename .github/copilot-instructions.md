@@ -90,7 +90,7 @@ type ApiResponse<T> =
 ### 4.4 QA & Architectural Integrity
 - **Never automate away QA.** A human must click through the deployed app and apply taste.
 - Reject "slop": inconsistent spacing, fake loading states, dead code, half-typed interfaces.
-- Prefer **deep modules** (small interface, large functionality — Ousterhout). Example: a single `ImageProcessor` with `.process(file)` hiding bg-removal + flip + upload, instead of three leaky helpers scattered across the app. Deep modules test better and dramatically improve AI performance.
+- Prefer **small public interfaces hiding large implementations.** Example: a single `ImageProcessor` with `.process(file)` hiding bg-removal + flip + upload, instead of three leaky helpers scattered across the app. This keeps callers swappable, makes tests mock at the narrow interface instead of the SDK, and dramatically improves AI performance because the relevant context window for any change is smaller.
 
 ### 4.5 Scaling
 - Once issues are independent and well-specified, multiple agents can run in **parallel** on separate branches/worktrees.

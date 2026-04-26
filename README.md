@@ -49,7 +49,7 @@ This project follows the agentic workflow described in [.github/copilot-instruct
 1. **Grill Me** → PRD with explicit out-of-scope.
 2. **Kanban issues** with `blocked_by` chains; vertical (tracer-bullet) slices.
 3. **Ralph loop** — agents pick up unblocked issues, work TDD, run `tsc --noEmit` + lint + tests every iteration.
-4. **Manual QA** + deep modules (Ousterhout) for architectural integrity.
+4. **Manual QA** + small public interfaces hiding the integration details (see [Architecture](docs/ARCHITECTURE.md)).
 
 ## Getting started
 
