@@ -44,13 +44,7 @@ export function ShareActions({
   );
 
   useEffect(() => {
-    // Tick every 1s normally; every 15s when the user prefers reduced motion
-    // (countdown text changes are a form of animation).
-    const reduced =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const intervalMs = reduced ? 15_000 : 1_000;
-    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 

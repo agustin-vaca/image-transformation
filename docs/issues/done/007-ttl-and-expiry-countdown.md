@@ -54,8 +54,9 @@ Shipped across PR #6 + post-merge polish:
   there's no GET JSON endpoint anymore — the page is the canonical
   consumer.
 - Countdown ticks every 1s, anchored to absolute `expiresAt` (survives
-  tab sleep). Drops to 15s intervals when
-  `prefers-reduced-motion: reduce` is set.
+  tab sleep). The original spec called for `prefers-reduced-motion`
+  handling; on review, a 1Hz numeric counter is not the kind of motion
+  WCAG 2.3.3 targets, so we dropped that branch as cargo-culted.
 - Local-time + IANA timezone label rendered with
   `Intl.DateTimeFormat().resolvedOptions().timeZone`; falls back to "UTC".
 - Cleanup of expired R2 objects is tracked separately in issue 009.
