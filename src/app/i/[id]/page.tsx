@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { computeExpiresAt, isExpired } from "@/server/expiry";
@@ -10,6 +11,41 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  if (!ID_RE.test(id)) return {};
+  const env = getEnv();
+  const publicUrl = `${env.R2_PUBLIC_BASE_URL.replace(/\/+$/, "")}/images/${id}`;
+  const h = await headers();
+  const host = h.get("host") ?? "";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const shareUrl = `${proto}://${host}/i/${id}`;
+  const title = "Your transformed image";
+  const description =
+    "Background removed and horizontally flipped. Auto-deletes 24 hours after upload.";
+  return {
+    title,
+    description,
+    openGraph: {
+      type: "website",
+      title,
+      description,
+      url: shareUrl,
+      images: [{ url: publicUrl }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [publicUrl],
+    },
+  };
+}
 
 export default async function ImagePage({
   params,
@@ -53,7 +89,6 @@ export default async function ImagePage({
         />
         <ShareActions
           id={id}
-          publicUrl={publicUrl}
           shareUrl={shareUrl}
           expiresAtIso={expiresAt.toISOString()}
         />

@@ -27,12 +27,10 @@ function resolveTimeZone(): string {
 
 export function ShareActions({
   id,
-  publicUrl,
   shareUrl,
   expiresAtIso,
 }: {
   id: string;
-  publicUrl: string;
   shareUrl: string;
   expiresAtIso: string;
 }) {
@@ -72,18 +70,7 @@ export function ShareActions({
     }
   };
 
-  const downloadImage = async () => {
-    const res = await fetch(publicUrl);
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `image-${id}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(objectUrl);
-  };
+  const downloadHref = `/api/images/${id}/download`;
 
   const deleteImage = async () => {
     if (!confirm("Delete this image? This cannot be undone.")) return;
@@ -125,14 +112,13 @@ export function ShareActions({
         >
           {copied ? "Copied!" : "Copy share link"}
         </button>
-        <button
-          type="button"
-          onClick={() => void downloadImage()}
-          disabled={expired}
-          className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
+        <a
+          href={expired ? undefined : downloadHref}
+          aria-disabled={expired}
+          className="flex-1 min-w-[8rem] rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 aria-disabled:opacity-50 aria-disabled:pointer-events-none dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-900"
         >
           Download
-        </button>
+        </a>
         <button
           type="button"
           onClick={() => void deleteImage()}
