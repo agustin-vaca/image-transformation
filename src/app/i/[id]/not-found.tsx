@@ -45,7 +45,7 @@ export default function ImageNotFound() {
           <a
             href="https://github.com/agustin-vaca/image-transformation"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="text-xs font-semibold uppercase tracking-wider text-primary hover:underline"
           >
             GitHub

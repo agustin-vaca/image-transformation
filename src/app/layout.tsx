@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
 
-// Manrope — body + headlines. Inter at weight 500 — used for monospaced
-// numerals (timer / metadata) per Stitch design system §Typography.
+// Manrope — body + headlines.
+// Inter (weight 500) — used for tabular numerals (timer / metadata)
+// per Stitch design system §Typography. Inter is *not* a monospaced
+// typeface; we lean on `font-variant-numeric: tabular-nums` (applied
+// to the `font-mono` utility in globals.css) to keep digits aligned.
 const manrope = Manrope({
   variable: "--font-manrope",
   subsets: ["latin"],
@@ -11,8 +14,8 @@ const manrope = Manrope({
   display: "swap",
 });
 
-const interMono = Inter({
-  variable: "--font-inter-mono",
+const interNumeric = Inter({
+  variable: "--font-inter-numeric",
   subsets: ["latin"],
   weight: ["500"],
   display: "swap",
@@ -32,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${interMono.variable} h-full antialiased`}
+      className={`${manrope.variable} ${interNumeric.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
