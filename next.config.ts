@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
-// TEMPORARY: surface Vercel's per-function size breakdown in the build log
-// so we can see what's pushing /api/images over the 250 MB unzipped limit.
-// Drop this once the deploy is green.
+// Keep until /api/images deploy is reliably green: surfaces Vercel's
+// per-function size breakdown so we can confirm the prune script is
+// holding the function under 250 MB.
 process.env.VERCEL_ANALYZE_BUILD_OUTPUT = "1";
 
 const nextConfig: NextConfig = {

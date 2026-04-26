@@ -78,8 +78,15 @@ for (const dir of imglyDistDirs) {
 
 // --- 2. Strip onnxruntime-node binaries we don't run on Vercel --------------
 // Vercel's iad1 region runs linux/x64. Drop everything else.
+// Additionally: on linux, the postinstall script downloads the *GPU* variant
+// of onnxruntime which ships ~460 MB of CUDA + TensorRT provider .so files
+// we never load (we run on CPU). Strip those too.
 const KEEP_PLATFORM = "linux";
 const KEEP_ARCH = "x64";
+const ORT_DROP_LIBS = new Set([
+  "libonnxruntime_providers_cuda.so",
+  "libonnxruntime_providers_tensorrt.so",
+]);
 const ortInstalls = findPnpmInstalls(
   "onnxruntime-node@",
   "onnxruntime-node",
@@ -94,8 +101,15 @@ for (const ortRoot of ortInstalls) {
       continue;
     }
     for (const arch of fs.readdirSync(platformDir)) {
+      const archDir = path.join(platformDir, arch);
       if (arch !== KEEP_ARCH) {
-        rmrf(path.join(platformDir, arch));
+        rmrf(archDir);
+        continue;
+      }
+      for (const lib of fs.readdirSync(archDir)) {
+        if (ORT_DROP_LIBS.has(lib)) {
+          rmrf(path.join(archDir, lib));
+        }
       }
     }
   }
