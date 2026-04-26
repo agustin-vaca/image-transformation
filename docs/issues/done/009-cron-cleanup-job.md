@@ -34,10 +34,13 @@ Shipped post-merge. Notes:
 - No `MetadataStore` exists; the cron lists R2 directly via
   `R2Storage.listExpired(cutoff)` and filters on `LastModified`. Fits the
   free-tier constraint and avoids introducing a DB.
-- `vercel.json` schedule is `*/5 * * * *`. Hobby tier only allows daily
-  cron; if deploying on Hobby, change to `0 * * * *` (hourly) or upgrade.
+- `vercel.json` schedule is `0 3 * * *` (daily at 03:00 UTC). Vercel
+  Hobby caps cron jobs at once-per-day; expressions like `0 * * * *`
+  fail deployment with `Hobby accounts are limited to daily cron jobs`.
+  Worst-case cleanup lag is therefore ~24h beyond TTL — acceptable since
+  `/i/[id]` already returns the funny 404 the moment expiry is detected
+  (lazy check via `isExpired`), so users never see a stale image. Only
+  R2 storage cost is affected, and it's negligible at this scale.
 - `CRON_SECRET` validated by `env.ts` (min 16 chars). Vercel Cron sends
   `Authorization: Bearer $CRON_SECRET` automatically.
-- README cleanup-lag note: TTL + 5 min worst case (Pro) / TTL + cron
-  interval (Hobby).
 _TBD_
