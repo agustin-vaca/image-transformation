@@ -59,7 +59,7 @@ describe("R2ImageProcessor.process", () => {
     const input = Buffer.from([99]);
     const dto = await processor.process(input, "image/jpeg", "cat.jpg");
 
-    expect(bg.remove).toHaveBeenCalledWith(input);
+    expect(bg.remove).toHaveBeenCalledWith(input, "image/jpeg");
     expect(flip.flip).toHaveBeenCalledWith(transparent);
     expect(storage.put).toHaveBeenCalledWith(flipped, "image/png");
 

@@ -27,12 +27,12 @@ export class R2ImageProcessor implements ImageProcessor {
 
   async process(
     file: Buffer,
-    _mime: string,
+    mime: string,
     filename: string,
   ): Promise<ImageDTO> {
     // bg-removal always returns PNG (transparent background), so the final
     // mime is always image/png regardless of the input mime.
-    const transparent = await this.bgRemover.remove(file);
+    const transparent = await this.bgRemover.remove(file, mime);
     const flipped = await this.flipper.flip(transparent);
 
     const { id, previewUrl } = await this.storage.put(flipped, "image/png");

@@ -20,16 +20,15 @@ export class BackgroundRemover {
   /**
    * Remove the background from an image buffer.
    *
-   * @param buf  Source image bytes (PNG/JPEG/WebP).
-   * @returns    PNG bytes with a transparent background.
+   * @param buf   Source image bytes (PNG/JPEG/WebP).
+   * @param mime  Source image mime type. Required to drive the library's
+   *              codec dispatcher; without it imgly throws "Unsupported
+   *              format: " because it inspects `blob.type` first.
+   * @returns     PNG bytes with a transparent background.
    */
-  async remove(buf: Buffer): Promise<Buffer> {
+  async remove(buf: Buffer, mime: string = "image/png"): Promise<Buffer> {
     try {
-      // Pass a Blob because it is the documented input shape for the library.
-      // We do not set `blob.type`; format handling is done from the bytes.
-      // `new Uint8Array(buf)` produces a fresh ArrayBuffer-backed view, which
-      // satisfies TS strict's BlobPart and avoids SharedArrayBuffer concerns.
-      const blob = new Blob([new Uint8Array(buf)]);
+      const blob = new Blob([new Uint8Array(buf)], { type: mime });
       const out = await removeBackground(blob, {
         publicPath: IMGLY_CDN_PUBLIC_PATH,
       });
