@@ -61,6 +61,7 @@ export function ShareActions({
   const tzLabel = timeZone === "UTC" ? "UTC" : timeZone;
 
   const copyShareLink = async () => {
+    setError(null);
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);

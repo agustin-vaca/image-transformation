@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
+import { ACCEPTED_MIME_TYPES } from "@/lib/api";
 
 type Status =
   | { kind: "idle" }
@@ -10,8 +11,8 @@ type Status =
   | { kind: "processing" } // upload done; server doing bg-removal + flip
   | { kind: "error"; message: string };
 
-const ACCEPTED = "image/png,image/jpeg,image/webp";
-const ACCEPTED_SET = new Set(ACCEPTED.split(","));
+const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
+const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 const MAX_BYTES = 10 * 1024 * 1024;
 
 /**

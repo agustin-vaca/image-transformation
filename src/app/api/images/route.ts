@@ -4,17 +4,14 @@ import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { getEnv } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
+import { ACCEPTED_MIME_TYPES } from "@/lib/api";
 
 export const runtime = "nodejs";
 // BG removal can take >10s on cold starts; opt out of Vercel's 10s default.
 export const maxDuration = 60;
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const ACCEPTED_MIMES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-]);
+const ACCEPTED_MIMES = new Set<string>(ACCEPTED_MIME_TYPES);
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse<ImageDTO>>> {
   try {

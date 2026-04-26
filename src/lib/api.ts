@@ -3,6 +3,14 @@
  * See PRD §6.
  */
 
+/** Single source of truth for the upload mime allowlist (client + server). */
+export const ACCEPTED_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const satisfies readonly string[];
+export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
+
 export type ApiResponse<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: ErrorCode; message: string } };
