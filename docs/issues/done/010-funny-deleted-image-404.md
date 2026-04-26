@@ -1,7 +1,7 @@
 ---
 id: 010
 title: Funny 404 for deleted/expired image pages
-status: todo
+status: done
 blocked_by: []
 slice: vertical
 owner: unassigned
@@ -45,3 +45,6 @@ gone, render a custom 404 page that says something like:
 - Changing the global 404.
 
 ## Retro (fill on completion)
+Implemented as `src/app/i/[id]/not-found.tsx`. Next.js App Router picks
+this up automatically whenever `notFound()` is thrown from `page.tsx` in
+the same segment, so the global 404 stays untouched.
