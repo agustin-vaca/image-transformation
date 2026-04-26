@@ -1,6 +1,6 @@
 ---
 id: 009
-title: Cron cleanup job (Vercel Cron, every 5 min)
+title: Cron cleanup job (Vercel Cron, daily)
 status: done
 blocked_by: [004, 007]
 slice: vertical
@@ -11,7 +11,7 @@ owner: unassigned
 Per [PRD §5 / §4.2](../PRD.md), TTL enforcement is belt-and-braces: lazy-on-read (covered by issue 007) **plus** a scheduled cron that physically deletes expired storage objects so we honor the "30-minute" promise even if no GET ever happens.
 
 ## Goal
-A protected `GET /api/cron/cleanup` endpoint, invoked by Vercel Cron every 5 minutes, that finds expired rows in `MetadataStore`, deletes the corresponding R2 objects, and removes the rows.
+A protected `GET /api/cron/cleanup` endpoint, invoked by Vercel Cron once per day (Hobby-tier cap), that finds expired R2 objects and deletes them. Lazy-on-read in `/i/[id]` covers the gap so users never see an expired image.
 
 ## Acceptance criteria
 - [ ] `app/api/cron/cleanup/route.ts` implemented.
@@ -20,10 +20,10 @@ A protected `GET /api/cron/cleanup` endpoint, invoked by Vercel Cron every 5 min
 - [ ] Returns a JSON summary `{ ok: true, data: { scanned, deleted, failed } }`.
 - [ ] `vercel.json` declares the cron:
   ```json
-  { "crons": [{ "path": "/api/cron/cleanup", "schedule": "*/5 * * * *" }] }
+  { "crons": [{ "path": "/api/cron/cleanup", "schedule": "0 3 * * *" }] }
   ```
 - [ ] Integration test: seed 3 rows (1 expired, 2 fresh) → call endpoint → assert only the expired row + R2 object are gone.
-- [ ] Worst-case cleanup lag documented in README: TTL + 5 min.
+- [ ] Worst-case cleanup lag documented in README: up to ~24h beyond TTL (Hobby cap); users never see stale images thanks to lazy-on-read.
 
 ## Out of scope
 - User-facing cleanup status / dashboard.

@@ -133,7 +133,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 | Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped in a `BackgroundRemover` deep module so we can swap to a SaaS later without touching callers. |
 | Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
 | Metadata store       | **SQLite via `better-sqlite3`** (file on disk in dev; mounted volume in prod) | One file, zero infra, perfect fit for short-lived ephemeral rows. Easy to swap for Postgres later — access goes through one `MetadataStore` module. |
-| Cleanup mechanism    | **Both**: Vercel Cron every 5 min **and** lazy-on-read | Cron guarantees physical deletion within ~30m+5m even if nobody hits the API; lazy-on-read guarantees correctness even if cron breaks. |
+| Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
 | Hosting (deploy)     | **Vercel**                                      | Native Next.js App Router, built-in Cron, generous free tier, `git push` deploy. |
 
 ---
@@ -194,7 +194,7 @@ All resolved — see §5 (services) and §9 (architecture). Kept for posterity:
 - [x] Which bg-removal provider? → `@imgly/background-removal-node` (§5)
 - [x] Which storage provider? → Cloudflare R2 (§5)
 - [x] Max file size? → **10 MB** (enforced client + server)
-- [x] Cleanup mechanism? → Vercel Cron every 5 min **and** lazy-on-read (§5)
+- [x] Cleanup mechanism? → Vercel Cron daily **and** lazy-on-read (§5)
 - [x] Repo layout? → Single-repo Next.js, Option C — thin `app/` + framework-agnostic `server/` (§9)
 
 ---
@@ -214,7 +214,7 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 │       ├── images/route.ts            # POST
 │       ├── images/[id]/route.ts       # GET, DELETE
 │       ├── images/[id]/download/route.ts
-│       └── cron/cleanup/route.ts      # invoked by Vercel Cron every 5m
+│       └── cron/cleanup/route.ts      # invoked by Vercel Cron daily (Hobby cap)
 ├── server/                           # framework-agnostic, zero next/* imports
 │   ├── processor/
 │   │   ├── index.ts                   # ImageProcessor (deep module)

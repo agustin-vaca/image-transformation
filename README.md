@@ -22,7 +22,7 @@
 - **Image processing:** [`sharp`](https://sharp.pixelplumbing.com/) (`.flop()` for horizontal flip)
 - **Storage:** Cloudflare R2 (S3-compatible, zero egress)
 - **Metadata:** SQLite via `better-sqlite3`
-- **Cleanup:** Vercel Cron (every 5 min) + lazy-on-read
+- **Cleanup:** Vercel Cron (daily, Hobby tier cap) + lazy-on-read
 - **Deploy:** Vercel
 
 See [PRD §5 / §9](docs/PRD.md) for the full rationale.
