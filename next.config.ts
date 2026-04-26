@@ -25,28 +25,13 @@ const nextConfig: NextConfig = {
   // Make sure Next's output tracing copies the linux/x64 ONNX runtime
   // binaries into the deployed function, while *excluding* the darwin and
   // win32 binaries (only linux/x64 is used on Vercel). Without this trim,
-  // the serverless function blows past Vercel's 300MB unzipped limit.
-  // Also: explicitly include @imgly/background-removal-node's `dist/`
-  // weight chunks. The library loads them at runtime via fs.readFile of a
-  // dynamically constructed `file://` URL, which Next's NFT tracer cannot
-  // see, so without this include the model weights are silently dropped
-  // from the deployed function and the first request 502s with
-  // "Resource metadata not found".
+  // the serverless function blows past Vercel's 250 MB unzipped limit.
+  // Note: imgly weight chunks are NOT bundled — they're fetched from IMG.LY's
+  // CDN at runtime via `publicPath` (Turbopack NFT silently drops
+  // extension-less files, so bundling them is unreliable).
   outputFileTracingIncludes: {
     "/api/images": [
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/x64/**/*",
-      // imgly weights — include BOTH the real .pnpm path *and* the
-      // hoisted/symlinked path. The library resolves its default
-      // publicPath via `path.resolve('node_modules/@imgly/background-
-      // removal-node/dist/')`, i.e. it reads from the non-pnpm path
-      // at runtime. Vercel's NFT does not recreate pnpm symlinks, so
-      // we have to include that location explicitly too or readFile
-      // throws ENOENT on resources.json. We list multiple glob shapes
-      // because the weight chunks are *extension-less hash names* and
-      // some glob engines skip those with `**/*` — explicit hex globs
-      // and `**` (without trailing /*) cover all of them.
-      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
-      "./node_modules/@imgly/background-removal-node/dist/**",
     ],
   },
   outputFileTracingExcludes: {

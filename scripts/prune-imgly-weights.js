@@ -9,10 +9,11 @@
  * We always run on CPU, so those are pure dead weight. We also drop the
  * darwin/win32/linux-arm64 binaries since iad1 is linux/x64.
  *
- * NOTE: We deliberately do NOT prune the @imgly/background-removal-node
- * model weights (~127 MB in dist/). The Node build of the library only
- * supports `file://` publicPath — the HTTP publicPath path is browser-only
- * — so the weights have to be on the filesystem at runtime.
+ * We ALSO drop the @imgly/background-removal-node model weights (~127 MB
+ * of extension-less hash-named files in dist/). They're fetched from
+ * IMG.LY's CDN at runtime via `publicPath` instead — Vercel's Turbopack
+ * NFT tracer silently drops extension-less files from the function bundle,
+ * so bundling them would 502 anyway with ENOENT.
  *
  * Runs only on Vercel (or when FORCE_PRUNE_IMGLY=1) so local dev is
  * unaffected.
@@ -53,6 +54,23 @@ function findPnpmInstalls(packagePrefix, packageName) {
     );
   }
   return out;
+}
+
+// --- Strip imgly model weights (extension-less hash files in dist/) ---------
+const imglyDistDirs = [
+  ...findPnpmInstalls(
+    "@imgly+background-removal-node@",
+    "@imgly/background-removal-node",
+  ).map((p) => path.join(p, "dist")),
+  path.join(process.cwd(), "node_modules/@imgly/background-removal-node/dist"),
+];
+for (const dir of imglyDistDirs) {
+  if (!fs.existsSync(dir)) continue;
+  for (const file of fs.readdirSync(dir)) {
+    // Keep .cjs/.mjs/.json/.ts/.map; drop hash-named binary chunks.
+    if (path.extname(file) !== "") continue;
+    rmrf(path.join(dir, file));
+  }
 }
 
 // --- Strip onnxruntime-node binaries we don't run on Vercel -----------------
