@@ -46,11 +46,7 @@ const nextConfig: NextConfig = {
       // some glob engines skip those with `**/*` — explicit hex globs
       // and `**` (without trailing /*) cover all of them.
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
-      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/*",
-      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/[0-9a-f]*",
       "./node_modules/@imgly/background-removal-node/dist/**",
-      "./node_modules/@imgly/background-removal-node/dist/*",
-      "./node_modules/@imgly/background-removal-node/dist/[0-9a-f]*",
     ],
   },
   outputFileTracingExcludes: {
