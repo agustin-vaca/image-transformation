@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { getEnv } from "@/server/env";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { RETENTION_MS } from "@/server/expiry";
@@ -21,9 +22,15 @@ export async function GET(
   try {
     const env = getEnv();
 
-    // Vercel Cron sends `Authorization: Bearer $CRON_SECRET`.
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${env.CRON_SECRET}`) {
+    // Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. Use a
+    // constant-time compare so attackers can't brute-force the secret by
+    // measuring response latency. Length-mismatch is also rejected without
+    // calling timingSafeEqual (which throws on unequal lengths).
+    const auth = request.headers.get("authorization") ?? "";
+    const expected = `Bearer ${env.CRON_SECRET}`;
+    const a = Buffer.from(auth);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw new ApiError(ErrorCodes.UNAUTHORIZED, "Unauthorized");
     }
 

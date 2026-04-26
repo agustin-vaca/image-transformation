@@ -61,12 +61,15 @@ export function ShareActions({
   const tzLabel = timeZone === "UTC" ? "UTC" : timeZone;
 
   const copyShareLink = async () => {
+    setError(null);
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* ignore */
+      // Clipboard API can fail (insecure context, permissions denied,
+      // unsupported browser). Surface it instead of silently swallowing.
+      setError("Couldn't copy — select the link manually.");
     }
   };
 
