@@ -27,6 +27,19 @@ export class BackgroundRemover {
     } catch (err) {
       // Log server-side; don't leak underlying library details to clients.
       console.error("Background removal failed:", err);
+      // TEMPORARY: when DEBUG_BG_ERRORS=1, surface the underlying error in
+      // the response so we can diagnose Vercel runtime failures without
+      // scraping logs. Off by default to avoid leaking internals (OWASP A09).
+      if (process.env.DEBUG_BG_ERRORS === "1") {
+        const detail =
+          err instanceof Error
+            ? `${err.name}: ${err.message}`
+            : String(err);
+        throw new ApiError(
+          ErrorCodes.BG_REMOVAL_FAILED,
+          `BG removal failed: ${detail}`,
+        );
+      }
       throw new ApiError(
         ErrorCodes.BG_REMOVAL_FAILED,
         "Failed to remove background.",
