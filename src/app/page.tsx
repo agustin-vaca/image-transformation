@@ -1,21 +1,26 @@
 import Link from "next/link";
 import { Uploader } from "@/components/Uploader";
 
-// Funny "You can…" examples — keep tight, one line each.
-// Each card frames the value prop concretely so it's obvious *why*
-// you'd want a horizontally-flipped, background-removed cutout.
-const EXAMPLES: ReadonlyArray<{ title: string; body: string }> = [
+// Funny one-liner captions land under each mirror card.
+const MIRROR_CARDS: ReadonlyArray<{
+  src: string;
+  alt: string;
+  caption: string;
+}> = [
   {
-    title: "Wave at yourself.",
-    body: "Make a guy say hi to himself.",
+    src: "/examples/wave.jpg",
+    alt: "Portrait of a young man waving cheerfully",
+    caption: "Wave at yourself.",
   },
   {
-    title: "Cat staredown.",
-    body: "Stage a face-off between a cat and… the same cat.",
+    src: "/examples/cat.jpg",
+    alt: "Close-up of a curious ginger cat",
+    caption: "Cat staredown.",
   },
   {
-    title: "Two-person solo band.",
-    body: "Build a duet where both members are you.",
+    src: "/examples/guitar.jpg",
+    alt: "Musician playing an acoustic guitar in a sunlit room",
+    caption: "Two-person solo band.",
   },
 ];
 
@@ -84,27 +89,43 @@ export default function Home() {
           ))}
         </section>
 
-        {/* Examples — funny "You can…" cards */}
+        {/* Examples — mirror cards (image left, same image flipped right) */}
         <section className="flex flex-col gap-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-2xl font-bold tracking-tight text-on-surface">
-              You can…
+              Examples
             </h2>
             <p className="text-sm text-on-surface-variant">
-              A few things this is genuinely good for.
+              Original on the left, mirrored twin on the right.
             </p>
           </div>
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {EXAMPLES.map((ex) => (
-              <li
-                key={ex.title}
-                className="flex flex-col gap-2 rounded-2xl border border-outline-variant bg-surface-container-lowest p-5"
-              >
-                <h3 className="text-sm font-semibold text-on-surface">
-                  {ex.title}
-                </h3>
-                <p className="text-sm leading-relaxed text-on-surface-variant">
-                  {ex.body}
+            {MIRROR_CARDS.map((card) => (
+              <li key={card.src} className="flex flex-col gap-2">
+                <div className="relative aspect-square overflow-hidden rounded-2xl border border-outline-variant bg-surface-container">
+                  {/* White divider sits over the seam so the mirror line reads at a glance. */}
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-px -translate-x-1/2 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.2)]"
+                  />
+                  <div className="flex h-full w-full">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={card.src}
+                      alt={card.alt}
+                      className="h-full w-1/2 object-cover"
+                    />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={card.src}
+                      alt=""
+                      aria-hidden="true"
+                      className="h-full w-1/2 object-cover -scale-x-100"
+                    />
+                  </div>
+                </div>
+                <p className="text-sm font-semibold text-on-surface">
+                  {card.caption}
                 </p>
               </li>
             ))}
