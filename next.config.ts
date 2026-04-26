@@ -6,14 +6,19 @@ const nextConfig: NextConfig = {
   // assets resolve correctly inside Vercel's serverless functions.
   serverExternalPackages: ["@imgly/background-removal-node", "sharp", "onnxruntime-node"],
 
-  // Make sure Next's output tracing copies the native ONNX runtime binary
-  // into the deployed function. Without this, the route module crashes at
-  // import on Vercel with "cannot find module". The model weights themselves
-  // are downloaded from imgly's CDN on first call (cached to /tmp), so we
-  // intentionally do NOT bundle the ~127 MB of weights.
+  // Make sure Next's output tracing copies the linux/x64 ONNX runtime
+  // binaries into the deployed function, while *excluding* the darwin and
+  // win32 binaries (only linux/x64 is used on Vercel). Without this trim,
+  // the serverless function blows past Vercel's 300MB unzipped limit.
   outputFileTracingIncludes: {
     "/api/images": [
-      "./node_modules/onnxruntime-node/bin/**/*",
+      "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/x64/**/*",
+    ],
+  },
+  outputFileTracingExcludes: {
+    "/api/images": [
+      "node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
+      "node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/win32/**",
     ],
   },
 };
