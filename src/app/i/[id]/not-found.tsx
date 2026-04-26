@@ -11,7 +11,7 @@ export default function ImageNotFound() {
           Looks like your image got deleted.
         </h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Images on this site auto-delete 1 hour after upload — or whenever
+          Images on this site auto-delete 24 hours after upload — or whenever
           someone hits the Delete button. Either way, this one&apos;s gone.
         </p>
         <Link

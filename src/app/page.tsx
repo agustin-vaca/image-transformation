@@ -10,7 +10,7 @@ export default function Home() {
           </h1>
           <p className="text-base text-zinc-600 dark:text-zinc-400 sm:text-lg">
             Upload an image. We remove the background, flip it horizontally,
-            and give you a link that lasts 1 hour.
+            and give you a link that lasts 24 hours.
           </p>
         </div>
         <Uploader />

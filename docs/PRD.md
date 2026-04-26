@@ -10,7 +10,7 @@
 
 **Problem.** Removing the background from an image and flipping it sounds trivial, but the off-the-shelf tools that do it are either (a) bloated SaaS dashboards that demand a login, or (b) developer APIs with no UI. There's no zero-friction "drop an image, get a clean URL back" experience.
 
-**Goal.** Ship a live, **beautiful** single-purpose web app where a visitor can upload one image, watch it get its background removed and horizontally flipped with delightful progress feedback, and walk away with a unique public URL they (or anyone they share it with) can open to preview and download the result. The image self-destructs **1 hour after transformation**, with the exact local-time deletion moment shown up front.
+**Goal.** Ship a live, **beautiful** single-purpose web app where a visitor can upload one image, watch it get its background removed and horizontally flipped with delightful progress feedback, and walk away with a unique public URL they (or anyone they share it with) can open to preview and download the result. The image self-destructs **24 hours after transformation**, with the exact local-time deletion moment shown up front.
 
 **North-star feeling.** "This feels like a tiny, polished tool — not a homework assignment."
 
@@ -45,7 +45,7 @@
 - Horizontal flip via `sharp`.
 - Hosted output + a unique **shareable landing page** at `/i/:id`.
 - Server-side **download endpoint** (`Content-Disposition: attachment`, sensible filename).
-- **1-hour retention**, then automatic deletion from storage. GETs do **not** consume the link.
+- **24-hour retention**, then automatic deletion from storage. GETs do **not** consume the link.
 - **Timezone-aware countdown** on both the result screen and the shared landing page (see §4.1).
 - Open Graph / Twitter Card tags on `/i/:id` so shared links unfurl with a preview.
 - Live deployment with public URL in the README.
@@ -58,7 +58,7 @@
 - Any image edit beyond bg-removal + horizontal flip.
 - Paid tiers of any 3rd-party service.
 - Mobile-native apps.
-- Retention longer than 1 hour.
+- Retention longer than 24 hours.
 - Single-use / consume-on-download semantics (link is freely re-openable until TTL expires).
 
 ---
@@ -70,7 +70,7 @@
         │ IDLE                             │
         │ Hero + drop zone + file picker   │
         │ Footnote: "Images auto-delete    │
-        │ 1 hour after transformation."    │
+        │ 24 hours after transformation." │
         └──────────────┬───────────────────┘
                        │ file chosen
                        ▼
@@ -131,7 +131,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 | Concern              | Choice                                          | Why |
 |----------------------|-------------------------------------------------|-----|
 | Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped in a `BackgroundRemover` deep module so we can swap to a SaaS later without touching callers. |
-| Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 1-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
+| Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
 | Metadata store       | **SQLite via `better-sqlite3`** (file on disk in dev; mounted volume in prod) | One file, zero infra, perfect fit for short-lived ephemeral rows. Easy to swap for Postgres later — access goes through one `MetadataStore` module. |
 | Cleanup mechanism    | **Both**: Vercel Cron every 5 min **and** lazy-on-read | Cron guarantees physical deletion within ~30m+5m even if nobody hits the API; lazy-on-read guarantees correctness even if cron breaks. |
 | Hosting (deploy)     | **Vercel**                                      | Native Next.js App Router, built-in Cron, generous free tier, `git push` deploy. |
@@ -167,7 +167,7 @@ type ImageDTO = {
 
 Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `INTERNAL`.
 
-> Note: the `DELETE` endpoint is kept for the cleanup job and as a safety valve, but is **not** exposed in the UI — the UI relies on the 1-hour TTL. GETs never delete.
+> Note: the `DELETE` endpoint is kept for the cleanup job and as a safety valve, but is **not** exposed in the UI — the UI relies on the 24-hour TTL. GETs never delete.
 
 ---
 
