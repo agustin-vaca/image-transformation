@@ -101,6 +101,22 @@ for (const ortRoot of ortInstalls) {
   }
 }
 
+// --- 3. Strip non-linux/x64 native packages that pnpm hoists -----------------
+// Several packages (sharp, next/swc, lightningcss, esbuild, tailwindcss/oxide)
+// resolve their native binary via an `@scope/<pkg>-<platform>-<arch>` peer
+// package. pnpm installs entries for every supported platform; we only need
+// the linux/x64 one. Match by suffix and delete anything that *isn't* linux.
+const pnpmRoot = path.join(process.cwd(), "node_modules/.pnpm");
+if (fs.existsSync(pnpmRoot)) {
+  const NON_LINUX = /[-+](darwin|win32|wasm32|freebsd|android)(-|@)/;
+  const NON_X64_LINUX = /[-+]linux-(arm64|arm|ia32|s390x|ppc64)(-|@)/;
+  for (const entry of fs.readdirSync(pnpmRoot)) {
+    if (NON_LINUX.test(entry) || NON_X64_LINUX.test(entry)) {
+      rmrf(path.join(pnpmRoot, entry));
+    }
+  }
+}
+
 console.log(
   `[prune-vercel] removed ${removed} files (${(removedBytes / 1024 / 1024).toFixed(1)} MB)`,
 );
