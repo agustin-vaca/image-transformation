@@ -56,3 +56,4 @@ data/
 
 # Playwright MCP scratch
 .playwright-mcp/
+image-*.png
