@@ -1,4 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "src/app/api/images/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "excludeFiles": "node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32,linux/arm64}/**"
+    }
+  }
 }
