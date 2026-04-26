@@ -6,6 +6,7 @@ import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
 

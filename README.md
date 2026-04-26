@@ -8,7 +8,7 @@
 
 ## Status
 
-✅ **Core flow shipped.** Upload → background removal → horizontal flip → R2 upload → unique share link → download → delete → 24h TTL. Live on Vercel; 34 tests green.
+✅ **Core flow shipped.** Upload → background removal → horizontal flip → R2 upload → unique share link → download → delete → 24h TTL. Live on Vercel; tests green.
 
 - 📄 [Product Requirements Document](docs/PRD.md)
 - 📋 [Issue backlog](docs/issues/todo/) · [done](docs/issues/done/)
