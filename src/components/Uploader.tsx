@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 import { ACCEPTED_MIME_TYPES } from "@/lib/api";
@@ -14,6 +14,22 @@ type Status =
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 const MAX_BYTES = 10 * 1024 * 1024;
+
+// Rotating one-liners shown while the server does bg-removal + flip.
+// Order is shuffled per-mount so reloads don't always start with the same line.
+const PROCESSING_MESSAGES: ReadonlyArray<string> = [
+  "Removing background & flipping\u2026",
+  "Teaching pixels to face the other way\u2026",
+  "Asking the background to please leave\u2026",
+  "Negotiating with stubborn pixels\u2026",
+  "Holding up a tiny mirror\u2026",
+  "Convincing photons to swap sides\u2026",
+  "Yelling \u2018left is the new right\u2019\u2026",
+  "Polishing your reflection\u2026",
+  "Doing yoga with your photo\u2026",
+  "Almost there. Probably.\u2026",
+];
+const MESSAGE_ROTATION_MS = 2500;
 
 /**
  * Two-phase upload:
@@ -53,8 +69,25 @@ export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
+  const [messageIndex, setMessageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = status.kind === "uploading" || status.kind === "processing";
+
+  // Rotate the funny processing messages every MESSAGE_ROTATION_MS while the
+  // server is working. The first tick fires immediately and jumps by a random
+  // offset so back-to-back uploads feel fresh; subsequent ticks advance one
+  // line at a time.
+  useEffect(() => {
+    if (status.kind !== "processing") return;
+    const offset =
+      1 + Math.floor(Math.random() * (PROCESSING_MESSAGES.length - 1));
+    let step = offset;
+    const interval = setInterval(() => {
+      setMessageIndex((i) => (i + step) % PROCESSING_MESSAGES.length);
+      step = 1;
+    }, MESSAGE_ROTATION_MS);
+    return () => clearInterval(interval);
+  }, [status.kind]);
 
   const upload = useCallback(
     async (file: File) => {
@@ -107,7 +140,7 @@ export function Uploader() {
     status.kind === "uploading"
       ? `Uploading ${status.progress}%`
       : status.kind === "processing"
-        ? "Removing background & flipping…"
+        ? PROCESSING_MESSAGES[messageIndex]
         : "";
 
   return (
