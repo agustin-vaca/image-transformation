@@ -1,7 +1,7 @@
 ---
 id: 008
 title: Shareable landing page (/i/:id) + download endpoint
-status: todo
+status: done
 blocked_by: [005, 007]
 slice: vertical
 owner: unassigned
@@ -45,4 +45,18 @@ Visiting `/i/:id` shows a beautiful preview page; clicking **Download** triggers
 - Per-link analytics.
 
 ## Retro (fill on completion)
-_TBD_
+Shipped across PR #6 (page + preview + countdown + delete + funny 404)
+and this follow-up:
+- `GET /api/images/:id/download` streams from `R2Storage.get(id)` with
+  `Content-Disposition: attachment` and `Cache-Control: private,
+  max-age=0, must-revalidate`. HEAD-then-GET means TTL is enforced
+  cheaply before any bytes are buffered, and `EXPIRED` returns 410.
+- ShareActions Download button is now a plain `<a href=...>` so the URL
+  itself is shareable as a direct download (no fetch+blob roundtrip).
+- OG / Twitter Card meta added via `generateMetadata` on `/i/[id]`. The
+  `og:image` is the public R2 URL (already serves the processed image).
+- Filename uses `image-<id>.<ext>` derived from the stored mime; we did
+  **not** wire `ImageDTO.filename` end-to-end because the original name
+  isn't preserved through the pipeline today — deferred (no story).
+- 4 integration tests cover the download route: invalid id, expired,
+  happy-path streaming, and 3-reads-don't-delete.

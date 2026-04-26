@@ -41,6 +41,27 @@ the design system without changing any flow or adding marketing content.
 - [ ] Dark mode preserved (Stitch defines a light variant; pick a
       sensible dark mapping or drop dark mode entirely — do whichever
       is faster).
+- [ ] **App name decision.** Pick the final name and replace `(App
+      name still pending)` placeholders. Working idea: **MirrorMe**
+      (your subject, doubled). Other contenders to riff on tomorrow:
+      - *Twinly* — short, friendly, .com plausible-ish.
+      - *Doppel* — leans into the German "double".
+      - *Reflectish* — a little weirder, more memorable.
+      - *Hi, Me!* — caption-energy, harder to brand.
+      Pick one, search the domain, ship it.
+- [ ] **Funny examples row on `/` (below the dropzone).** Three to
+      five short "You can..." cards that make the value prop concrete
+      and a little absurd. Keep copy tight — one line each. Starter
+      pool:
+      - *Make a guy say hi to himself.*
+      - *Stage a staredown between a cat and … the same cat.*
+      - *Give your dog a perfectly symmetrical best friend.*
+      - *Build a two-person band where both members are you.*
+      - *Recreate that mirror-universe Star Trek scene at home.*
+      Followed by a small disclaimer line:
+      > You'll need other software to actually combine the two images
+      > into one scene — but that's a different story. This is about
+      > **your** story, and how you'll write it with **(App name)**.
 - [ ] `tsc --noEmit`, lint, and tests pass.
 - [ ] Manual QA on a deployed preview against the Stitch screenshots.
 
