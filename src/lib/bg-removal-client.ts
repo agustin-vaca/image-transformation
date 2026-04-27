@@ -1,7 +1,6 @@
-// Singleton wrapper around bg-removal.worker.ts. The worker hosts
-// transformers.js (MODNet) + onnxruntime-web off the main thread so the UI
-// stays responsive (spinner, rotating messages) while model download, WebGPU
-// shader compile / WASM compile, and inference run.
+// Singleton wrapper around bg-removal.worker.ts. The worker hosts imgly +
+// onnxruntime-web off the main thread so the UI stays responsive (spinner,
+// rotating messages) while WASM compile + ONNX inference run.
 
 import type { OutMsg } from "@/workers/bg-removal.worker";
 

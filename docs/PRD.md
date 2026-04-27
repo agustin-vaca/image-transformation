@@ -39,7 +39,7 @@
 
 ### In scope
 - Single-image upload (JPG / PNG / WebP, **≤ 10 MB**) via drag-and-drop, file picker, **or live camera capture** (desktop `getUserMedia` modal, mobile native `<input capture>` fallback).
-- Background removal via [`@huggingface/transformers`](https://github.com/huggingface/transformers.js) running [`Xenova/modnet`](https://huggingface.co/Xenova/modnet) **in the browser, inside a Web Worker** (WebGPU + q4f16 when available, WASM/fp32 fallback).
+- Background removal via `@imgly/background-removal` running **in the browser, inside a Web Worker** (WASM / WebGPU when available).
 - Horizontal flip via client-side `<canvas>` (`scale(-1, 1)`); the server never touches image bytes.
 - **Direct-to-R2 uploads** via a server-issued presigned PUT URL (bypasses Vercel's 4.5 MB function-body limit).
 - Hosted output + a unique **shareable landing page** at `/i/:id`.
@@ -134,7 +134,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 
 | Concern              | Choice                                          | Why |
 |----------------------|-------------------------------------------------|-----|
-| Background removal   | **`@huggingface/transformers` + `Xenova/modnet`** (browser, WebGPU/WASM, Apache-2.0) | Runs in the visitor's browser. Zero quota, zero API key, **zero server CPU**. MODNet ships a ~12 MB q4f16 ONNX that loads on WebGPU and a ~26 MB fp32 fallback for WASM, with permissive licensing. Earlier server-side `@imgly/background-removal-node` had a ~14 s CPU floor on a warm Vercel lambda; an in-browser `@imgly` build (AGPL) and `onnx-community/BiRefNet-ONNX` were also tried — see [ARCHITECTURE.md §Tradeoffs](ARCHITECTURE.md). |
+| Background removal   | **`@imgly/background-removal`** (browser, WASM)    | Runs in the visitor's browser. Zero quota, zero API key, **zero server CPU**. Original server-side variant (`@imgly/background-removal-node`) had a ~14 s CPU floor on a warm Vercel lambda. |
 | Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
 | Metadata store       | **None** \u2014 R2 object metadata (`LastModified`) is the source of truth for `expiresAt` | Eliminates a moving part. Storage already returns the timestamp we need; adding a database would just duplicate it. Easy to introduce later behind a `MetadataStore` module if richer queries are needed. |
 | Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
@@ -208,7 +208,7 @@ Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAI
 
 All resolved — see §5 (services) and §9 (architecture). Kept for posterity:
 
-- [x] Which bg-removal provider? → `@huggingface/transformers` + `Xenova/modnet` (browser, WebGPU/WASM) (§5)
+- [x] Which bg-removal provider? → `@imgly/background-removal` (browser, WASM) (§5)
 - [x] Which storage provider? → Cloudflare R2 (§5)
 - [x] Max file size? → **10 MB** (enforced client + server)
 - [x] Cleanup mechanism? → Vercel Cron daily **and** lazy-on-read (§5)
@@ -271,7 +271,7 @@ interface Storage {
 }
 
 // lib/bg-removal-client.ts — the only client-side seam.
-// Hides the transformers.js MODNet model + the Web Worker plumbing behind two functions.
+// Hides the @imgly model + the Web Worker plumbing behind two functions.
 function warmupModel(onProgress?: (pct: number) => void): Promise<void>;
 function removeBackgroundInWorker(blob: Blob): Promise<Blob>; // PNG with alpha
 ```
