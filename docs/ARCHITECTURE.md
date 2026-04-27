@@ -16,7 +16,7 @@ flowchart LR
     browser[Browser<br/>Next.js client]
     cam[[getUserMedia<br/>or input capture]]
     canvas[[canvas<br/>flip + downscale]]
-    worker[[Web Worker<br/>@imgly bg-removal<br/>WASM / WebGPU]]
+    worker[[Web Worker<br/>transformers.js + RMBG-1.4<br/>WASM / WebGPU]]
     server[Next.js server<br/>Route Handlers]
     r2[(Cloudflare R2<br/>S3-compatible)]
     cron[Vercel Cron<br/>daily]
@@ -40,7 +40,7 @@ flowchart LR
 
 | Concern | Choice | Why |
 |---|---|---|
-| Background removal | `@imgly/background-removal` (browser, WASM, **inside a Web Worker**) | Runs in the visitor's browser. Zero server CPU, zero quota, no API key. Worker keeps the main thread free for animation. |
+| Background removal | `@huggingface/transformers` running BRIA RMBG-1.4 (browser, WASM, **inside a Web Worker**) | Runs in the visitor's browser. Zero server CPU, zero quota, no API key. Worker keeps the main thread free for animation. |
 | Horizontal flip | Browser `<canvas>` `scale(-1, 1)` | Done in the same pass that downscales the image to `CLIENT_MAX_EDGE_PX`. No native binary, no server CPU. |
 | Image upload | **Direct-to-R2 presigned PUT** | Server signs a one-shot URL; bytes never traverse our serverless function, so we sidestep Vercel's 4.5 MB body limit. |
 | Storage | Cloudflare R2 | S3-compatible, **zero egress** — every download streams through us. |
@@ -71,7 +71,7 @@ flowchart TB
     end
 
     subgraph workers["workers/"]
-        bgWorker[bg-removal worker<br/>@imgly + onnxruntime-web]
+        bgWorker[bg-removal worker<br/>transformers.js + RMBG-1.4]
     end
 
     subgraph lib["lib/ (client helpers)"]
@@ -123,7 +123,7 @@ flowchart TB
     class bgWorker workerNode
 ```
 
-**Single integration seams.** Each external dependency sits behind a small public interface that hides a much larger implementation. On the server, `R2Storage` is the only seam left — Route Handlers don't know `@aws-sdk/client-s3` exists. On the client, `bg-removal-client.ts` (`warmupModel`, `removeBackgroundInWorker`) hides the `@imgly` model and the Web Worker plumbing, and `Uploader.tsx` does the canvas-based flip in the same pass that downscales to `CLIENT_MAX_EDGE_PX`. The payoff: swapping any single provider is a one-file change, and tests mock the narrow interface instead of the SDK underneath.
+**Single integration seams.** Each external dependency sits behind a small public interface that hides a much larger implementation. On the server, `R2Storage` is the only seam left — Route Handlers don't know `@aws-sdk/client-s3` exists. On the client, `bg-removal-client.ts` (`warmupModel`, `removeBackgroundInWorker`) hides the transformers.js model + Web Worker plumbing, and `Uploader.tsx` does the canvas-based flip in the same pass that downscales to `CLIENT_MAX_EDGE_PX`. The payoff: swapping any single provider is a one-file change, and tests mock the narrow interface instead of the SDK underneath.
 
 ---
 
@@ -135,7 +135,7 @@ sequenceDiagram
     actor U as Visitor
     participant UI as Uploader.tsx
     participant CV as canvas<br/>(flip + downscale)
-    participant W as Web Worker<br/>@imgly bg-removal
+    participant W as Web Worker<br/>transformers.js + RMBG-1.4
     participant API as POST /api/images
     participant S as R2Storage
     participant R2 as Cloudflare R2
@@ -271,15 +271,18 @@ type ApiResponse<T> =
 
 Why each piece of the stack was chosen, what it cost, and what we'd reach for if requirements changed.
 
-### Background removal — `@imgly/background-removal` (browser, WASM)
+### Background removal — BRIA RMBG-1.4 via `@huggingface/transformers` (browser, WASM)
 
 | Considered | Verdict |
 |---|---|
-| **Browser-side `@imgly/background-removal`** ✅ | Runs in the visitor's browser via WASM (and WebGPU when available). Zero server CPU, zero quota, no API key. The Vercel lambda doesn't need the 250 MB native ORT bundle anymore. |
+| **Browser-side `@huggingface/transformers` + `briaai/RMBG-1.4`** ✅ | RMBG-1.4 is the current open-source SOTA for general-purpose matting — visibly cleaner edges on hair, fur and translucent fabrics than the ISNet variants we used before. Runs in the visitor's browser via WASM (WebGPU optional), so still zero server CPU, zero quota, no API key. |
+| Previous: `@imgly/background-removal` (`isnet_fp16`) | Same in-browser model class, but the ISNet backbone produces noticeably softer matte edges; visible on hair / fur / glasses. Switched away once we had EMA-tuned progress UX that could absorb a slightly larger cold load. |
 | Server-side `@imgly/background-removal-node` | Original choice (PR #14). Hit a ~14 s CPU floor on a warm Vercel lambda — model inference is the floor and there's no caching/ORT-tuning that beats it. |
-| remove.bg / Photoroom / Pixian | Better quality on hard cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint. |
+| remove.bg / Photoroom / Pixian | Better on adversarial cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint. |
 
-**Cost:** the model is ~44 MB (`isnet_fp16`) plus ~10 MB of WASM. We previously shipped the smaller `isnet_quint8` (~22 MB) but the int8 quantization noticeably softened hair / fur / fine edges; fp16 trades ~22 MB of cold bandwidth for a clear quality jump while staying WASM-friendly. We preload on first user intent (hover, focus, drag-enter) so the download usually finishes before the visitor picks a file, and the headline names "Loading background-removal model" otherwise. Inference runs in a Web Worker so the main thread can keep animating. Old/low-end devices may struggle — fallback to a SaaS provider would be a one-component change.
+**Cost:** the RMBG-1.4 ONNX weights are ~88 MB (fp32) plus ~10 MB of WASM runtime fetched on demand. The model is downloaded straight from the Hugging Face CDN (`env.allowLocalModels = false`) and cached by the browser, so the cold load is paid once per visitor. We preload on first user intent (hover, focus, drag-enter) so the download usually finishes before the visitor picks a file, and the smooth-progress headline names "Loading background-removal model" while it does. Inference runs in a Web Worker so the main thread can keep animating. Old/low-end devices may struggle — fallback to a SaaS provider would be a one-component change.
+
+**License caveat:** BRIA RMBG-1.4 is released under a Creative Commons license that restricts use to **non-commercial** purposes ([model card](https://huggingface.co/briaai/RMBG-1.4)). Acceptable for this portfolio app; productizing commercially would require either a BRIA commercial license or swapping the model id out for a permissive alternative (e.g. `Xenova/modnet`).
 
 **Swap path:** edit [`lib/bg-removal-client.ts`](../src/lib/bg-removal-client.ts) and the worker source under [`src/workers/`](../src/workers/). To move bg-removal back to the server, restore the previous server-side processor seam and have `Uploader.tsx` POST the original file instead of the worker output.
 

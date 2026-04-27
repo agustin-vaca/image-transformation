@@ -1,15 +1,27 @@
 /// <reference lib="webworker" />
 //
-// Runs @imgly/background-removal off the main thread. WASM compile + ONNX
-// inference do enough sync work to stall the main-thread renderer (frozen
-// spinner / paused message rotation). Inside a dedicated worker the main
-// thread stays idle and CSS animations + React state updates keep ticking.
+// Runs background removal off the main thread using @huggingface/transformers
+// (transformers.js) with the BRIA RMBG-1.4 model. ONNX inference + WASM
+// compile do enough sync work to stall the main-thread renderer (frozen
+// spinner / paused message rotation), so we keep it inside a dedicated
+// worker so the main-thread CSS animations and React state updates keep
+// ticking.
+//
+// Why RMBG-1.4 instead of imgly's ISNet variants:
+// - Visibly better edges on hair, fur, translucent fabrics — the dimension
+//   imgly's quint8/fp16 ISNet struggles with.
+// - Same in-browser, zero-cost path (no API key, no quota).
+// - Caveat: BRIA RMBG-1.4 is licensed for non-commercial use. Acceptable
+//   for a portfolio/demo; commercial productization would need a BRIA
+//   commercial license or a different model.
 
 import {
-  preload,
-  removeBackground,
-  type Config,
-} from "@imgly/background-removal";
+  pipeline,
+  RawImage,
+  env,
+  type ProgressInfo,
+  type BackgroundRemovalPipeline,
+} from "@huggingface/transformers";
 
 type PreloadMsg = { id: number; type: "preload" };
 type RemoveMsg = {
@@ -26,23 +38,59 @@ export type OutMsg = ProgressMsg | DoneMsg | ErrorMsg;
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-// Model selection: imgly ships three ISNet variants — `isnet_quint8`
-// (~22 MB int8, fastest, weakest edges), `isnet_fp16` (~44 MB, much
-// better hair/fur/fine detail, still WASM-friendly) and `isnet` (~88 MB
-// fp32, marginal additional quality at 2x the bandwidth). We default to
-// fp16 because the visible quality jump over quint8 is large and the
-// extra ~22 MB is paid only on the cold load — our on-intent preload
-// usually finishes before the visitor picks a file, and the EMA ETA
-// adapts to the real download time.
-const CONFIG: Config = { model: "isnet_fp16" };
+// Pull all assets from the HF CDN. Local-model lookup would otherwise
+// resolve relative to the worker URL and 404 in production.
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+
+const MODEL_ID = "briaai/RMBG-1.4";
+
+let pipePromise: Promise<BackgroundRemovalPipeline> | undefined;
+
+function getPipeline(
+  onProgress?: (info: ProgressInfo) => void,
+): Promise<BackgroundRemovalPipeline> {
+  pipePromise ??= pipeline("background-removal", MODEL_ID, {
+    // WASM is the safest default — WebGPU isn't universally available yet.
+    // The model is small enough (~88 MB fp32) that WASM inference is
+    // acceptable, and avoiding WebGPU sidesteps a class of driver bugs.
+    device: "wasm",
+    dtype: "fp32",
+    progress_callback: onProgress,
+  }) as unknown as Promise<BackgroundRemovalPipeline>;
+  return pipePromise;
+}
+
+function readKey(info: ProgressInfo): string {
+  // ProgressInfo is a discriminated union; `file` / `name` only exist on
+  // some variants. Read defensively without an `any` cast.
+  const rec = info as unknown as Record<string, unknown>;
+  const file = typeof rec.file === "string" ? rec.file : undefined;
+  const name = typeof rec.name === "string" ? rec.name : undefined;
+  return file ?? name ?? "asset";
+}
 
 function makeProgressHandler(id: number) {
-  // Aggregate per-asset progress into a single 0..100 number, throttled to
-  // integer changes so we don't flood the message channel.
+  // Aggregate per-asset download progress into a single 0..100 number,
+  // throttled to integer changes so we don't flood the message channel.
+  // Once a file is fully downloaded transformers.js emits a `done`/`ready`
+  // status with no `total`; treat that as 100% for that asset.
   const totals = new Map<string, { current: number; total: number }>();
   let last = -1;
-  return (key: string, current: number, total: number) => {
-    totals.set(key, { current, total });
+  return (info: ProgressInfo) => {
+    const status = info.status;
+    if (status === "progress" || status === "download") {
+      const rec = info as unknown as Record<string, unknown>;
+      const total = typeof rec.total === "number" ? rec.total : 0;
+      const current = typeof rec.loaded === "number" ? rec.loaded : 0;
+      totals.set(readKey(info), { current, total });
+    } else if (status === "done" || status === "ready") {
+      const key = readKey(info);
+      const prev = totals.get(key);
+      if (prev) totals.set(key, { current: prev.total, total: prev.total });
+    } else {
+      return;
+    }
     let sumC = 0;
     let sumT = 0;
     for (const v of totals.values()) {
@@ -61,16 +109,22 @@ ctx.onmessage = async (ev: MessageEvent<InMsg>) => {
   const msg = ev.data;
   try {
     if (msg.type === "preload") {
-      await preload({ ...CONFIG, progress: makeProgressHandler(msg.id) });
+      await getPipeline(makeProgressHandler(msg.id));
       ctx.postMessage({ id: msg.id, type: "done" } satisfies DoneMsg);
       return;
     }
     if (msg.type === "remove") {
-      const result = await removeBackground(msg.blob, {
-        ...CONFIG,
-        output: { format: "image/png" },
-        progress: makeProgressHandler(msg.id),
-      });
+      // If the user uploads before the preload finishes, the same promise
+      // is reused — no double download. Progress events on this id only
+      // fire on a true cold start.
+      const segmenter = await getPipeline(makeProgressHandler(msg.id));
+      const input = await RawImage.fromBlob(msg.blob);
+      const output = (await segmenter(input)) as unknown as RawImage[];
+      const cutout = output[0];
+      if (!cutout) throw new Error("RMBG returned no result");
+      // RawImage.toBlob() yields a PNG with the alpha mask already
+      // applied — exactly what we ship to R2.
+      const result = await cutout.toBlob("image/png");
       ctx.postMessage({ id: msg.id, type: "done", result } satisfies DoneMsg);
       return;
     }
