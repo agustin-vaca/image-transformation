@@ -153,7 +153,12 @@ async function requestSignedUpload(
 // Module-level so the second upload's ETAs come from the first upload's
 // measured wall-clock times instead of these defaults.
 const phaseEta = new PhaseEtaTracker({
-  model: 4000, // ~12-26 MB MODNet, cached after first visit
+  // Cold-visit budget includes the ~12 MB MODNet model + ~10 MB of
+  // onnxruntime-web WASM. Realistic on broadband is ~6–10 s. Underestimating
+  // here is what made the bar feel stuck near the end on a fresh visit; the
+  // smooth-progress creep phase covers any remaining slop, and the EMA
+  // tightens the estimate on every subsequent upload.
+  model: 8000,
   bgRemove: 1500, // MODNet inference: ~0.3s WebGPU / ~1.5s WASM, EMA adapts
   upload: 1500, // 0.5–1 MB PNG to R2 over typical home broadband
 });
