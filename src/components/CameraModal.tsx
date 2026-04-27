@@ -9,6 +9,28 @@ interface CameraModalProps {
 }
 
 /**
+ * Map common getUserMedia DOMException names to a one-liner the user can
+ * actually act on. Falls back to the raw message for unknown errors.
+ */
+function friendlyCameraError(err: unknown): string {
+  if (err instanceof DOMException) {
+    switch (err.name) {
+      case "NotAllowedError":
+      case "SecurityError":
+        return "Camera permission was denied. Allow access in your browser, or use the file picker instead.";
+      case "NotFoundError":
+      case "OverconstrainedError":
+        return "No camera was found on this device. Use the file picker instead.";
+      case "NotReadableError":
+        return "Your camera is busy in another app. Close it and try again.";
+      case "AbortError":
+        return "Camera start was interrupted. Try again.";
+    }
+  }
+  return err instanceof Error ? err.message : "Could not access the camera";
+}
+
+/**
  * Live-camera capture modal. Uses getUserMedia for a video preview, then
  * grabs a single frame onto a canvas and emits it as a JPEG File so it can
  * flow through the same upload pipeline as a picked file.
@@ -52,16 +74,25 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
+          // Some browsers resolve play() before any frame has decoded, so a
+          // capture fired immediately after would draw a black canvas. Wait
+          // for the first frame (readyState >= HAVE_CURRENT_DATA = 2) before
+          // marking the modal as ready.
           await video.play().catch(() => undefined);
+          if (video.readyState < 2) {
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                video.removeEventListener("loadeddata", done);
+                resolve();
+              };
+              video.addEventListener("loadeddata", done, { once: true });
+            });
+          }
           if (!cancelled) setReady(true);
         }
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Could not access the camera",
-        );
+        setError(friendlyCameraError(err));
       }
     })();
     return () => {

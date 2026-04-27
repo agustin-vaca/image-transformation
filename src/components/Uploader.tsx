@@ -243,8 +243,13 @@ export function Uploader() {
     const isCoarse =
       typeof window !== "undefined" &&
       window.matchMedia?.("(pointer: coarse)").matches;
+    // getUserMedia is only available in secure contexts (HTTPS or localhost).
+    // Anything else (e.g. an http://192.168.x.x preview on a LAN) silently
+    // returns no `mediaDevices`; fall back to the native camera input there.
     const hasGetUserMedia =
       typeof navigator !== "undefined" &&
+      typeof window !== "undefined" &&
+      window.isSecureContext &&
       !!navigator.mediaDevices?.getUserMedia;
     if (isCoarse || !hasGetUserMedia) {
       cameraInputRef.current?.click();
