@@ -451,7 +451,10 @@ export function Uploader() {
               aria-label="Processing progress"
             >
               <div
-                className="h-full bg-primary transition-[width] duration-150"
+                // No CSS width transition: smooth-progress already drives a
+                // continuous rAF animation, so a 150ms ease here just makes
+                // the bar lag visibly behind the percentage number.
+                className="h-full bg-primary"
                 style={{ width: `${progress}%` }}
               />
             </div>
