@@ -42,6 +42,12 @@ function friendlyCameraError(err: unknown): string {
 export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const captureBtnRef = useRef<HTMLButtonElement | null>(null);
+  // True only between the user clicking Capture and the toBlob callback
+  // resolving. Lets us bail out if the modal closes mid-encode so we don't
+  // emit a file the user already dismissed.
+  const captureLiveRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -74,21 +80,41 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
-          // Some browsers resolve play() before any frame has decoded, so a
-          // capture fired immediately after would draw a black canvas. Wait
-          // for the first frame (readyState >= HAVE_CURRENT_DATA = 2) before
-          // marking the modal as ready.
-          await video.play().catch(() => undefined);
-          if (video.readyState < 2) {
+          let playFailed = false;
+          await video.play().catch(() => {
+            playFailed = true;
+          });
+          // Wait for actual frames before enabling Capture. videoWidth > 0
+          // is the canonical "have a paintable frame" signal; readyState
+          // alone isn't enough on some browsers, and play() can resolve
+          // before frames exist.
+          if (!cancelled && (playFailed || !video.videoWidth)) {
             await new Promise<void>((resolve) => {
               const done = () => {
                 video.removeEventListener("loadeddata", done);
+                video.removeEventListener("canplay", done);
                 resolve();
               };
               video.addEventListener("loadeddata", done, { once: true });
+              video.addEventListener("canplay", done, { once: true });
+              // Some browsers fire neither if play() failed; poll once a
+              // frame as a last resort.
+              const poll = () => {
+                if (cancelled) return;
+                if (video.videoWidth > 0 && video.readyState >= 2) done();
+                else requestAnimationFrame(poll);
+              };
+              requestAnimationFrame(poll);
             });
           }
-          if (!cancelled) setReady(true);
+          if (cancelled) return;
+          if (!video.videoWidth || video.readyState < 2) {
+            setError(
+              "Camera started but no video frames are available. Try again or use the file picker.",
+            );
+            return;
+          }
+          setReady(true);
         }
       } catch (err) {
         if (cancelled) return;
@@ -113,8 +139,14 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
+    captureLiveRef.current = true;
     canvas.toBlob(
       (blob) => {
+        // The modal may have been closed (Cancel/Escape/backdrop) between
+        // the click and the encode finishing; if so, don't start an upload
+        // the user has already dismissed.
+        if (!captureLiveRef.current) return;
+        captureLiveRef.current = false;
         if (!blob) return;
         const file = new File([blob], `camera-${Date.now()}.jpg`, {
           type: "image/jpeg",
@@ -127,15 +159,60 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
     );
   }, [onCapture, ready, stop]);
 
-  // Close on Escape for keyboard parity with native dialogs.
+  // Close on Escape for keyboard parity with native dialogs. Also invalidate
+  // any in-flight capture so a late toBlob callback doesn't fire onCapture.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      captureLiveRef.current = false;
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      captureLiveRef.current = false;
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open, onClose]);
+
+  // Focus management: restore focus to the element that opened the modal
+  // when it closes, and trap Tab inside the dialog while open.
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
+    // Move focus to the primary action so keyboard users can capture
+    // immediately once Capture becomes enabled.
+    const focusTarget = captureBtnRef.current ?? dialogRef.current;
+    focusTarget?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus?.({ preventScroll: true });
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -149,7 +226,11 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-surface-container-lowest p-4 shadow-2xl flex flex-col gap-4">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="w-full max-w-md rounded-2xl bg-surface-container-lowest p-4 shadow-2xl flex flex-col gap-4 outline-none"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-on-surface">Take a photo</h2>
           <button
@@ -194,6 +275,7 @@ export function CameraModal({ open, onClose, onCapture }: CameraModalProps) {
             Cancel
           </button>
           <button
+            ref={captureBtnRef}
             type="button"
             onClick={capture}
             disabled={!ready || !!error}

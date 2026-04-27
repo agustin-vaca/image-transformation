@@ -389,6 +389,7 @@ export function Uploader() {
         accept="image/*"
         capture="environment"
         className="sr-only"
+        disabled={busy}
         onChange={onFileChange}
       />
 
