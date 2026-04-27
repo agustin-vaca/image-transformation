@@ -3,16 +3,18 @@ import type { ImageDTO } from "@/lib/api";
 import type { ImageProcessor } from "./index";
 import { BackgroundRemover } from "./bg-removal";
 import { Flipper } from "./flip";
+import { Resizer } from "./resize";
 import type { R2Storage } from "@/server/storage/r2";
 import { PerfTimer } from "@/server/perf";
 
-/** bg-removal → flip → R2 upload. */
+/** downscale → bg-removal → flip → R2 upload. */
 export class R2ImageProcessor implements ImageProcessor {
   constructor(
     private readonly appBaseUrl: string,
     private readonly storage: R2Storage,
     private readonly bgRemover: BackgroundRemover = new BackgroundRemover(),
     private readonly flipper: Flipper = new Flipper(),
+    private readonly resizer: Resizer = new Resizer(),
   ) {}
 
   async process(
@@ -22,8 +24,11 @@ export class R2ImageProcessor implements ImageProcessor {
     timer?: PerfTimer,
   ): Promise<ImageDTO> {
     const t = timer ?? new PerfTimer("processor.process");
+    const prepared = await t.stage("downscale", () =>
+      this.resizer.downscale(file),
+    );
     const transparent = await t.stage("bgRemove", () =>
-      this.bgRemover.remove(file, mime),
+      this.bgRemover.remove(prepared, mime),
     );
     const flipped = await t.stage("flip", () => this.flipper.flip(transparent));
     const { id, previewUrl } = await t.stage("upload", () =>
