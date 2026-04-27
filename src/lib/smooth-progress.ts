@@ -74,9 +74,11 @@ export function createSmoothProgress(
     }
     emit();
 
-    // Stop the rAF loop once we've effectively reached HARD_CAP — there's
-    // no more visible movement until `complete()` snaps to 100%.
-    if (value < HARD_CAP - 0.01) {
+    // Stop the rAF loop once the *displayed* (rounded) value has reached
+    // HARD_CAP — there's no more visible movement until `complete()` snaps
+    // to 100%, so spinning at 60fps would just burn CPU/battery for the
+    // ~2 minutes it would take `value` to asymptote within 0.01 of HARD_CAP.
+    if (lastEmitted < HARD_CAP) {
       raf = requestAnimationFrame(tick);
     }
   }
