@@ -99,11 +99,11 @@ export function ShareActions({
       <div className="flex items-center justify-between text-xs text-on-surface-variant">
         <span>
           Auto-deletes in{" "}
-          <span className="font-mono text-on-surface">
+          <span className="font-mono text-on-surface" suppressHydrationWarning>
             {formatRemaining(remaining)}
           </span>
         </span>
-        <span title={tzLabel}>
+        <span title={tzLabel} suppressHydrationWarning>
           {expiryLocal}{" "}
           <span className="text-outline">({tzLabel})</span>
         </span>

@@ -9,6 +9,7 @@ import { computeExpiresAt } from "@/server/expiry";
 import {
   ErrorCodes,
   MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
   UPLOAD_MIME_TYPE,
   type ApiResponse,
   type SignedUploadDTO,
@@ -24,7 +25,7 @@ const Body = z.object({
     .number()
     .int()
     .positive()
-    .max(MAX_UPLOAD_BYTES, `File exceeds ${MAX_UPLOAD_BYTES} bytes`),
+    .max(MAX_UPLOAD_BYTES, `Processed image exceeds the ${MAX_UPLOAD_MB} MB upload limit.`),
   mime: z.literal(UPLOAD_MIME_TYPE),
 });
 

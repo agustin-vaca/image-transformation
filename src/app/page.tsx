@@ -112,6 +112,8 @@ export default function Home() {
                   <img
                     src={card.src}
                     alt={card.alt}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-1/2 object-cover"
                   />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -119,6 +121,8 @@ export default function Home() {
                     src={card.src}
                     alt=""
                     aria-hidden="true"
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-1/2 object-cover -scale-x-100"
                   />
                 </div>
