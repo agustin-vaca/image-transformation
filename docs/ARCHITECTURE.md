@@ -158,6 +158,14 @@ sequenceDiagram
 
 Server-side errors are mapped to a typed `ErrorCode` (`INVALID_FILE`, `STORAGE_FAILED`, …) by `toErrorResponse()` so the underlying error message never leaks to the client. Client-side errors (model load, bg-removal, canvas encode, R2 PUT) surface inline in the uploader before any further step runs.
 
+### Progress UX
+
+The uploader renders a single 0→100% bar across all phases plus a stage-aware headline. Two design calls are worth flagging:
+
+- **Time-based, not event-based.** The bar is driven entirely by [`createSmoothProgress`](../src/lib/smooth-progress.ts) — a linear climb from 0 to 95% over an estimated total duration, snapping to 100% only when the whole pipeline actually finishes. Real progress events from the underlying phases (model download, bg-removal, R2 PUT) intentionally do **not** feed the displayed value: bg-removal emits no events on a warm cache and the R2 PUT bursts events at the very end, so mixing them in produced the classic "stall at 60% then sprint to 100" feel. Driving the bar from time alone gives a uniform pace at the cost of numerical accuracy.
+- **Self-calibrating ETA.** [`PhaseEtaTracker`](../src/lib/smooth-progress.ts) keeps an EMA of each phase's wall-clock duration (warmup / bgRemove / upload) so the next upload's total ETA matches reality — the first upload uses defaults, and subsequent ones adapt to the visitor's device + network.
+- **Stage-aware copy.** The headline rotates inside a per-stage list (`warmup` → `removing` → `uploading`) defined in `Uploader.tsx`. Each list mixes one plain "what's happening" line with sillier ones, and the headline jumps to a fresh random message the instant the pipeline advances, so a stage transition is visible even if the bar happens to be mid-climb.
+
 ---
 
 ## 4. Share + download flow

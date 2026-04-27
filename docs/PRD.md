@@ -26,7 +26,7 @@
 |---|---------|----------------------------------------------------|---------------------------------------------|---------------------|
 | 1 | visitor | land on a page that immediately shows me what to do | I don't have to think                       | hero with one drop zone + one CTA, no nav clutter |
 | 2 | visitor | upload one image (drag-drop, file picker, **or live camera capture**) | I can transform it                          | size/mime validated client + server; rejection is friendly, never silent; desktop opens a `getUserMedia` modal, mobile falls back to `<input capture>` |
-| 3 | visitor | see processing progress with named steps           | I know it isn't broken                      | distinct, animated states: uploading → removing background → flipping → hosting → done |
+| 3 | visitor | see processing progress with named steps           | I know it isn't broken                      | a single 0→100% bar plus a stage-aware headline that names the current step (warming up the AI → removing background → uploading), with rotating funny copy inside each stage |
 | 4 | visitor | get a unique shareable URL                         | I can save it or send it to a friend        | URL copyable in one click; opens a preview page on click |
 | 5 | recipient | open the shared URL and see the image rendered  | I can decide whether to download it         | landing page shows the image on a transparent checker bg + a Download button + countdown |
 | 6 | recipient | click Download and get a real file save          | I can keep the image                        | server forces `Content-Disposition: attachment` with a sensible filename |
@@ -82,11 +82,15 @@
                        ▼
         ┌──────────────────────────────────┐
         │ PROCESSING (animated steps)      │
-        │ ① Loading model (first time)     │
+        │ Single 0→100% bar driven by a    │
+        │ time-based estimator (no jumpy   │
+        │ mid-flight snaps); headline      │
+        │ names the current stage:         │
+        │ ① Waking up the AI (cold cache)  │
         │ ② Removing background + flipping │
         │   (Web Worker, in-browser)       │
         │ ③ Uploading directly to R2       │
-        │   (presigned PUT, with progress) │
+        │   (presigned PUT)                │
         └──────────────┬───────────────────┘
                        │ success
                        ▼
