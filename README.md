@@ -81,6 +81,16 @@ Scripts:
 - `pnpm lint` — ESLint
 - `pnpm test` / `pnpm test:watch` — vitest
 
+### Verifying cleanup locally
+
+The daily cron is just a `GET /api/cron/cleanup` with a bearer token. To exercise it without waiting 24 hours:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/cleanup
+```
+
+It returns a JSON envelope with the deleted-object count. Past-TTL objects are also short-circuited on every read (`/api/images/:id`, `/i/:id`, `/api/images/:id/download`) so a delayed cron never serves a stale image — see [docs/PRD.md §4.2](docs/PRD.md).
+
 ## License
 
 [MIT](LICENSE) © 2026 Agustin Vaca
