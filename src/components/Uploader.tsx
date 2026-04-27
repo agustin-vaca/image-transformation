@@ -15,7 +15,6 @@ type Status =
   | { kind: "loadingModel"; progress: number }
   | { kind: "removingBackground" }
   | { kind: "uploading"; progress: number }
-  | { kind: "processing" }
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
@@ -136,7 +135,6 @@ function uploadToR2WithProgress(
   headers: Record<string, string>,
   body: Blob,
   onProgress: (pct: number) => void,
-  onUploaded: () => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -145,7 +143,6 @@ function uploadToR2WithProgress(
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
-    xhr.upload.onload = () => onUploaded();
     xhr.onerror = () => reject(new Error("Network error during upload"));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
@@ -169,6 +166,18 @@ async function requestSignedUpload(
   return json.data;
 }
 
+/**
+ * Yield to the browser so a pending React commit can paint and CSS
+ * animations can start before we begin a long synchronous task (WASM init,
+ * canvas decoding, etc.). A double rAF is more reliable than `setTimeout(0)`
+ * because it guarantees we wait through one full paint frame.
+ */
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -180,8 +189,7 @@ export function Uploader() {
   const busy =
     status.kind === "loadingModel" ||
     status.kind === "removingBackground" ||
-    status.kind === "uploading" ||
-    status.kind === "processing";
+    status.kind === "uploading";
 
   // Rotate the funny messages for the entire duration of any busy phase
   // (model load, bg removal, upload, save). The list is constant; only the
@@ -229,6 +237,10 @@ export function Uploader() {
         // if a silent intent-warmup is already in flight, so the UI never sits
         // at idle for a multi-second download after file selection.
         setStatus({ kind: "loadingModel", progress: preloadProgress });
+        // Yield once so React can commit + the browser can paint the spinner
+        // and start its CSS animation BEFORE the WASM init eats the main
+        // thread for hundreds of ms. Without this the spinner appears frozen.
+        await yieldToBrowser();
         await warmupModel((pct) =>
           setStatus({ kind: "loadingModel", progress: pct }),
         );
@@ -238,6 +250,7 @@ export function Uploader() {
         // Doing the flip + downscale here means the server never touches the
         // bytes (no Vercel 4.5 MB body limit, no sharp on the lambda).
         setStatus({ kind: "removingBackground" });
+        await yieldToBrowser();
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         // imgly's removeBackground accepts Blob/ImageData/ArrayBuffer/Uint8Array/string
         // — passing the canvas directly throws "undefined is not iterable" inside the
@@ -265,7 +278,6 @@ export function Uploader() {
           signed.upload.headers,
           transparent,
           (pct) => setStatus({ kind: "uploading", progress: pct }),
-          () => setStatus({ kind: "processing" }),
         );
         const tUploadDone = performance.now();
 
@@ -312,9 +324,7 @@ export function Uploader() {
       ? `Warming up the model\u2026 ${status.progress}%`
       : status.kind === "uploading"
         ? `Uploading\u2026 ${status.progress}%`
-        : status.kind === "processing"
-          ? "Saving\u2026"
-          : "";
+        : "";
   const statusText = subText ? `${headline} \u2014 ${subText}` : headline;
 
   return (
