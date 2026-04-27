@@ -199,6 +199,9 @@ export function Uploader() {
         );
         const tUploadDone = performance.now();
 
+        // Debug/diagnostic only — a single `[perf-client]` log line per upload
+        // so we can eyeball model-load vs bg-removal vs upload time in DevTools.
+        // Has no effect on the user-visible flow.
         console.info(
           `[perf-client] upload modelLoad=${Math.round(tModelReady - tStart)}ms ` +
             `bgRemove+flip=${Math.round(tBgDone - tModelReady)}ms ` +

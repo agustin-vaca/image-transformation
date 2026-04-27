@@ -1,5 +1,10 @@
 /**
- * Tiny perf helper: measure async stages and log one structured line per request.
+ * Debug / diagnostic tool — NOT part of the product surface.
+ *
+ * Tiny perf helper: measures async stages and logs one structured line per
+ * request so we can eyeball where time goes in production. It has no effect
+ * on responses and is safe to leave wired in; remove the `new PerfTimer(...)`
+ * + `.stage(...)` + `.log(...)` calls in a route if you want to silence it.
  *
  * Usage:
  *   const t = new PerfTimer("images.POST");

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { getEnv } from "@/server/env";
 import { ApiError, toErrorResponse } from "@/server/errors";
+// Debug/diagnostic only — emits a `[perf]` log line per request, no product impact.
 import { PerfTimer } from "@/server/perf";
 import { computeExpiresAt } from "@/server/expiry";
 import {
