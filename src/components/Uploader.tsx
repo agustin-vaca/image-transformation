@@ -47,24 +47,54 @@ function loadImgly(): Promise<ImglyModule> {
   return imglyPromise;
 }
 
+// Subscribers receive aggregated 0..100 progress while preload is in flight.
+// Held in module scope so a warmup started by `onIntent` can still notify the
+// upload flow when it later subscribes mid-download.
+let preloadProgress = 0;
+const preloadSubscribers = new Set<(pct: number) => void>();
+
 function warmupModel(onProgress?: (pct: number) => void): Promise<void> {
+  if (onProgress) {
+    // Replay the last value so a late subscriber doesn't sit at 0% if preload
+    // has already made progress.
+    onProgress(preloadProgress);
+    preloadSubscribers.add(onProgress);
+  }
   preloadPromise ??= (async () => {
-    const mod = await loadImgly();
-    const totals = new Map<string, { current: number; total: number }>();
-    await mod.preload({
-      model: "isnet_quint8",
-      progress: (key: string, current: number, total: number) => {
-        totals.set(key, { current, total });
-        if (!onProgress) return;
-        let sumC = 0;
-        let sumT = 0;
-        for (const v of totals.values()) {
-          sumC += v.current;
-          sumT += v.total;
-        }
-        if (sumT > 0) onProgress(Math.round((sumC / sumT) * 100));
-      },
-    });
+    try {
+      const mod = await loadImgly();
+      const totals = new Map<string, { current: number; total: number }>();
+      let lastPct = -1;
+      await mod.preload({
+        model: "isnet_quint8",
+        progress: (key: string, current: number, total: number) => {
+          totals.set(key, { current, total });
+          let sumC = 0;
+          let sumT = 0;
+          for (const v of totals.values()) {
+            sumC += v.current;
+            sumT += v.total;
+          }
+          if (sumT <= 0) return;
+          const pct = Math.round((sumC / sumT) * 100);
+          // The library fires this very frequently; only notify on integer
+          // changes to avoid a re-render storm during the WASM/ONNX download.
+          if (pct === lastPct) return;
+          lastPct = pct;
+          preloadProgress = pct;
+          for (const cb of preloadSubscribers) cb(pct);
+        },
+      });
+      preloadProgress = 100;
+      for (const cb of preloadSubscribers) cb(100);
+    } catch (err) {
+      // Don't trap subsequent attempts behind a permanently-rejected promise.
+      preloadPromise = undefined;
+      preloadProgress = 0;
+      throw err;
+    } finally {
+      preloadSubscribers.clear();
+    }
   })();
   return preloadPromise;
 }
@@ -190,15 +220,13 @@ export function Uploader() {
 
       const tStart = performance.now();
       try {
-        // Phase 1: model + WASM.
-        if (!preloadPromise) {
-          setStatus({ kind: "loadingModel", progress: 0 });
-          await warmupModel((pct) =>
-            setStatus({ kind: "loadingModel", progress: pct }),
-          );
-        } else {
-          await preloadPromise;
-        }
+        // Phase 1: model + WASM. Always show loading state while we wait, even
+        // if a silent intent-warmup is already in flight, so the UI never sits
+        // at idle for a multi-second download after file selection.
+        setStatus({ kind: "loadingModel", progress: preloadProgress });
+        await warmupModel((pct) =>
+          setStatus({ kind: "loadingModel", progress: pct }),
+        );
         const tModelReady = performance.now();
 
         // Phase 2: decode + flip + downscale + bg-removal, all client-side.
