@@ -8,6 +8,7 @@ import {
   NoSuchKey,
   NotFound,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { nanoid } from "nanoid";
 import { ApiError, ErrorCodes } from "@/server/errors";
 
@@ -23,6 +24,16 @@ export interface StorageConfig {
 export interface PutResult {
   id: string;
   previewUrl: string;
+}
+
+/** Output of `signPut` — a one-shot direct-to-R2 PUT URL. */
+export interface SignedPut {
+  id: string;
+  uploadUrl: string;
+  /** Headers the client MUST send on the PUT (signed values). */
+  headers: Record<string, string>;
+  previewUrl: string;
+  expiresInSeconds: number;
 }
 
 export interface GetResult {
@@ -77,6 +88,51 @@ export class R2Storage {
       throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to store image.");
     }
     return { id, previewUrl: `${this.publicBaseUrl}/${key}` };
+  }
+
+  /**
+   * Mint a presigned PUT URL so the browser can upload the bytes directly
+   * to R2, bypassing the Vercel function 4.5 MB body limit. `contentLength`
+   * is signed into the URL — the client MUST send a body of exactly that
+   * size or R2 rejects the request, which is what stops the URL from being
+   * abused to upload arbitrarily large objects.
+   *
+   * Nothing exists at the returned key until the client completes the PUT;
+   * the cleanup cron sweeps any abandoned reservations after the retention
+   * window.
+   */
+  async signPut(
+    mime: string,
+    contentLength: number,
+    expiresInSeconds = 300,
+  ): Promise<SignedPut> {
+    const id = nanoid(ID_LENGTH);
+    const key = KEY_PREFIX + id;
+    try {
+      const uploadUrl = await getSignedUrl(
+        this.client,
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ContentType: mime,
+          ContentLength: contentLength,
+        }),
+        {
+          expiresIn: expiresInSeconds,
+          signableHeaders: new Set(["content-type", "content-length"]),
+        },
+      );
+      return {
+        id,
+        uploadUrl,
+        headers: { "content-type": mime },
+        previewUrl: `${this.publicBaseUrl}/${key}`,
+        expiresInSeconds,
+      };
+    } catch (err) {
+      console.error("R2 signPut failed:", err);
+      throw new ApiError(ErrorCodes.STORAGE_FAILED, "Failed to prepare upload.");
+    }
   }
 
   async get(id: string): Promise<GetResult> {

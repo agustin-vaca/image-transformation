@@ -19,7 +19,7 @@
 
 - **Framework:** Next.js (App Router, TypeScript strict)
 - **UI:** React + Tailwind
-- **Background removal:** [`@imgly/background-removal-node`](https://github.com/imgly/background-removal-js) (local, $0)
+- **Background removal:** [`@imgly/background-removal`](https://github.com/imgly/background-removal-js) (browser, WASM, AGPL, $0)
 - **Image processing:** [`sharp`](https://sharp.pixelplumbing.com/) (`.flop()` for horizontal flip)
 - **Storage:** Cloudflare R2 (S3-compatible, zero egress)
 - **Metadata:** none — R2's `LastModified` is the source of truth for `expiresAt`
