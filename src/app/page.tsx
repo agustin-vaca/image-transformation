@@ -39,8 +39,18 @@ export default function Home() {
       </header>
 
       {/* Upload */}
-      <section>
+      <section className="flex flex-col gap-3">
         <Uploader />
+        <p
+          role="note"
+          className="text-sm leading-relaxed text-on-surface-variant"
+        >
+          <span aria-hidden="true">💡 </span>
+          <span className="font-semibold text-on-surface">Pro tip:</span> the
+          mirror works best when your subject stands out clearly from the
+          background — strong contrast (light subject on dark backdrop, or vice
+          versa) gives the cleanest cut-out.
+        </p>
       </section>
 
       {/* Steps */}
