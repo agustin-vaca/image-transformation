@@ -26,7 +26,15 @@ export type OutMsg = ProgressMsg | DoneMsg | ErrorMsg;
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-const CONFIG: Config = { model: "isnet_quint8" };
+// Model selection: imgly ships three ISNet variants — `isnet_quint8`
+// (~22 MB int8, fastest, weakest edges), `isnet_fp16` (~44 MB, much
+// better hair/fur/fine detail, still WASM-friendly) and `isnet` (~88 MB
+// fp32, marginal additional quality at 2x the bandwidth). We default to
+// fp16 because the visible quality jump over quint8 is large and the
+// extra ~22 MB is paid only on the cold load — our on-intent preload
+// usually finishes before the visitor picks a file, and the EMA ETA
+// adapts to the real download time.
+const CONFIG: Config = { model: "isnet_fp16" };
 
 function makeProgressHandler(id: number) {
   // Aggregate per-asset progress into a single 0..100 number, throttled to
