@@ -1,5 +1,7 @@
 # Image Transformation App
 
+[![CI](https://github.com/agustin-vaca/image-transformation/actions/workflows/ci.yml/badge.svg)](https://github.com/agustin-vaca/image-transformation/actions/workflows/ci.yml)
+
 > Upload an image → background removed + horizontally flipped → get a unique shareable link that expires in 24 hours.
 
 **Live URL:** https://image-transformation-two.vercel.app
@@ -30,6 +32,14 @@
 - **UI design:** [Google Stitch](https://stitch.withgoogle.com/) (free tier) — generated the layouts, palette, and design tokens checked into [`docs/design/stitch/`](docs/design/stitch/) and mapped 1:1 into Tailwind's `@theme inline`
 
 See [PRD §5 / §9](docs/PRD.md) for the full rationale.
+
+## How this maps to the evaluation criteria
+
+The brief in [.github/copilot-instructions.md §3](.github/copilot-instructions.md) calls out three pillars. Where to look for each:
+
+- **User experience & design** — drop in any photo on the [live URL](https://image-transformation-two.vercel.app); the single-screen state machine (`IDLE → PROCESSING → DONE | ERROR`), animated stage-aware progress headline, live-ticking expiry countdown, and accessible camera modal are all in [src/components/Uploader.tsx](src/components/Uploader.tsx) and [src/components/CameraModal.tsx](src/components/CameraModal.tsx). Motion respects `prefers-reduced-motion`.
+- **Backend engineering** — [docs/ARCHITECTURE.md §3 (upload sequence diagram)](docs/ARCHITECTURE.md) and [§8 Tradeoffs](docs/ARCHITECTURE.md#8-tradeoffs). Direct-to-R2 presigned PUT to bypass Vercel's body-size limit, framework-agnostic `server/` (zero `next/*` imports), zod-validated env at boot, typed `ApiResponse<T>` envelope on every endpoint, constant-time `CRON_SECRET` compare, lazy-on-read TTL plus a daily cron fallback.
+- **Code quality** — strict TypeScript (`pnpm typecheck`), ESLint (`pnpm lint`), 27 vitest tests covering the R2 storage seam, expiry math, cron HMAC, download stream, and image-metadata route — all enforced on every PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Every external dependency sits behind a small interface (`R2Storage`, `bg-removal-client`) so swapping a provider is a one-file change.
 
 ## Repo layout
 

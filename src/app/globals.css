@@ -98,6 +98,18 @@ body {
   border-color: var(--color-primary);
 }
 
+/* Honor the user's reduced-motion preference — PRD §3 promises this.
+   The JS-driven animations (smooth-progress, rotating messages) already
+   degrade gracefully; this guards the bare CSS transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .upload-zone,
+  .upload-zone:not(.is-busy):hover,
+  .upload-zone.is-drag {
+    transition: none;
+    transform: none;
+  }
+}
+
 /* Transparency checkerboard for previewing PNGs with alpha. */
 .checker {
   background-color: var(--color-surface-container-lowest);
