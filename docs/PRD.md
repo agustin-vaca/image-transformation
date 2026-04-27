@@ -25,7 +25,7 @@
 | # | As a... | I want to...                                       | So that...                                  | Acceptance criteria |
 |---|---------|----------------------------------------------------|---------------------------------------------|---------------------|
 | 1 | visitor | land on a page that immediately shows me what to do | I don't have to think                       | hero with one drop zone + one CTA, no nav clutter |
-| 2 | visitor | upload one image (drag-drop or picker)             | I can transform it                          | size/mime validated client + server; rejection is friendly, never silent |
+| 2 | visitor | upload one image (drag-drop, file picker, **or live camera capture**) | I can transform it                          | size/mime validated client + server; rejection is friendly, never silent; desktop opens a `getUserMedia` modal, mobile falls back to `<input capture>` |
 | 3 | visitor | see processing progress with named steps           | I know it isn't broken                      | distinct, animated states: uploading → removing background → flipping → hosting → done |
 | 4 | visitor | get a unique shareable URL                         | I can save it or send it to a friend        | URL copyable in one click; opens a preview page on click |
 | 5 | recipient | open the shared URL and see the image rendered  | I can decide whether to download it         | landing page shows the image on a transparent checker bg + a Download button + countdown |
@@ -38,16 +38,17 @@
 ## 3. Scope
 
 ### In scope
-- Single-image upload (JPG / PNG / WebP, **≤ 10 MB**).
-- Background removal via free-tier 3rd-party (TBD — see §5).
-- Horizontal flip via `sharp`.
+- Single-image upload (JPG / PNG / WebP, **≤ 10 MB**) via drag-and-drop, file picker, **or live camera capture** (desktop `getUserMedia` modal, mobile native `<input capture>` fallback).
+- Background removal via `@imgly/background-removal` running **in the browser, inside a Web Worker** (WASM / WebGPU when available).
+- Horizontal flip via client-side `<canvas>` (`scale(-1, 1)`); the server never touches image bytes.
+- **Direct-to-R2 uploads** via a server-issued presigned PUT URL (bypasses Vercel's 4.5 MB function-body limit).
 - Hosted output + a unique **shareable landing page** at `/i/:id`.
 - Server-side **download endpoint** (`Content-Disposition: attachment`, sensible filename).
 - **24-hour retention**, then automatic deletion from storage. GETs do **not** consume the link.
 - **Timezone-aware countdown** on both the result screen and the shared landing page (see §4.1).
 - Open Graph / Twitter Card tags on `/i/:id` so shared links unfurl with a preview.
 - Live deployment with public URL in the README.
-- Polished, animated, accessible UI (motion respects `prefers-reduced-motion`).
+- Polished, animated, accessible UI (motion respects `prefers-reduced-motion`; camera modal traps focus and restores it on close).
 
 ### Out of scope (Non-Goals)
 - Authentication / user accounts (anonymous, single-session only).
@@ -67,10 +68,11 @@
         ┌──────────────────────────────────┐
         │ IDLE                             │
         │ Hero + drop zone + file picker   │
+        │   + Take-photo button            │
         │ Footnote: "Images auto-delete    │
         │ 24 hours after transformation." │
         └──────────────┬───────────────────┘
-                       │ file chosen
+                       │ file chosen / photo captured
                        ▼
         ┌──────────────────────────────────┐
         │ VALIDATING (instant)             │
@@ -80,10 +82,11 @@
                        ▼
         ┌──────────────────────────────────┐
         │ PROCESSING (animated steps)      │
-        │ ① Uploading                      │
-        │ ② Removing background            │
-        │ ③ Flipping                       │
-        │ ④ Hosting                        │
+        │ ① Loading model (first time)     │
+        │ ② Removing background + flipping │
+        │   (Web Worker, in-browser)       │
+        │ ③ Uploading directly to R2       │
+        │   (presigned PUT, with progress) │
         └──────────────┬───────────────────┘
                        │ success
                        ▼
@@ -152,17 +155,29 @@ type ImageDTO = {
   bytes: number;
   mime: string;
 };
+
+// Returned by POST /api/images. The browser then PUTs the bytes directly to
+// R2 using `upload.url` + `upload.headers`, bypassing our serverless function.
+type SignedUploadDTO = {
+  image: ImageDTO;
+  upload: {
+    url: string;
+    method: "PUT";
+    headers: Record<string, string>;  // signed values the client MUST send
+    expiresInSeconds: number;
+  };
+};
 ```
 
 | Method | Path                           | Body                  | Returns / Behaviour                                                                   |
 |--------|--------------------------------|-----------------------|---------------------------------------------------------------------------------------|
-| POST   | `/api/images`                  | `multipart/form-data` | `ApiResponse<ImageDTO>`                                                               |
+| POST   | `/api/images`                  | `application/json` `{ filename, bytes, mime: "image/png" }` | `ApiResponse<SignedUploadDTO>` — mints a one-shot R2 presigned PUT URL; image bytes never touch this function |
 | GET    | `/api/images/:id`              | —                     | `ApiResponse<ImageDTO>` (returns `EXPIRED` once past TTL)                              |
 | GET    | `/i/:id`                       | —                     | HTML landing page (preview + Download + countdown + OG tags); `EXPIRED` view past TTL |
 | GET    | `/api/images/:id/download`     | —                     | Streams bytes with `Content-Disposition: attachment; filename="..."`; `EXPIRED` past TTL |
-| DELETE | `/api/images/:id`              | —                     | `ApiResponse<{ id }>` (idempotent) — internal/ops only, **not** exposed in UI         |
+| DELETE | `/api/images/:id`              | —                     | `ApiResponse<{ id }>` (idempotent) — invoked from `/i/[id]` (“Delete now”) and the cleanup cron |
 
-Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `INTERNAL`.
+Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `UNAUTHORIZED`, `INTERNAL`.
 
 > Note: `DELETE /api/images/:id` is exposed in the UI on `/i/[id]` (“Delete now” button) and is also called by the daily cleanup cron. GETs never delete.
 
@@ -173,7 +188,7 @@ Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `STORAGE_FAILED`, `NOT_FOUND`, `E
 | Risk                                            | Mitigation                                                |
 |-------------------------------------------------|-----------------------------------------------------------|
 | Free-tier bg-removal quota runs out mid-review  | N/A — bg-removal runs in the browser, no quota             |
-| Large uploads hang serverless function          | Hard size limit + streamed processing + timeout           |
+| Large uploads hang serverless function          | N/A — image bytes go directly to R2 via a presigned PUT URL; the function only signs the URL |
 | API keys leak                                   | `.env` only, validated with `zod` at boot, never logged   |
 | Orphaned storage objects after failed flow      | Wrap in transactional cleanup (delete on any step error)  |
 | Cleanup job fails silently → images outlive TTL | Belt-and-braces: cleanup cron **and** on-read expiry check |
@@ -204,56 +219,65 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 
 ```
 .
-├── app/                              # Next.js UI + thin Route Handlers
-│   ├── page.tsx                       # uploader (IDLE → PROCESSING → DONE)
-│   ├── i/[id]/page.tsx                # shareable landing page
-│   └── api/
-│       ├── images/route.ts            # POST
-│       ├── images/[id]/route.ts       # GET, DELETE
-│       ├── images/[id]/download/route.ts
-│       └── cron/cleanup/route.ts      # invoked by Vercel Cron daily (Hobby cap)
-├── server/                           # framework-agnostic, zero next/* imports
-│   ├── processor/
-│   │   ├── index.ts                   # ImageProcessor interface (single seam)
-│   │   ├── r2-image-processor.ts       # flip → R2 upload (bg-removal happens client-side)
-│   │   ├── # bg-removal happens in components/Uploader.tsx via @imgly/background-removal
-│   │   └── flip.ts                    # sharp().flop()
-│   ├── storage/
-│   │   └── r2.ts                      # @aws-sdk/client-s3 against R2
-│   ├── expiry.ts                      # RETENTION_MS, computeExpiresAt(), isExpired()
-│   ├── errors.ts                      # ApiError + error codes
-│   └── env.ts                         # zod-validated env, throws at boot
-├── components/                       # React components
-├── lib/                              # client-only helpers (formatExpiry, etc.)
-├── tests/                            # vitest
+├── src/
+│   ├── app/                              # Next.js UI + thin Route Handlers
+│   │   ├── page.tsx                       # uploader (IDLE → PROCESSING → DONE)
+│   │   ├── i/[id]/page.tsx                # shareable landing page
+│   │   └── api/
+│   │       ├── images/route.ts            # POST  — signs an R2 PUT URL
+│   │       ├── images/[id]/route.ts       # GET, DELETE
+│   │       ├── images/[id]/download/route.ts
+│   │       └── cron/cleanup/route.ts      # invoked by Vercel Cron daily (Hobby cap)
+│   ├── server/                           # framework-agnostic, zero next/* imports
+│   │   ├── storage/
+│   │   │   └── r2.ts                      # @aws-sdk/client-s3 + s3-request-presigner
+│   │   ├── expiry.ts                      # RETENTION_MS, computeExpiresAt(), isExpired()
+│   │   ├── errors.ts                      # ApiError + error codes
+│   │   ├── perf.ts                        # PerfTimer (stage-scoped logging)
+│   │   └── env.ts                         # zod-validated env, throws at boot
+│   ├── components/                       # React components
+│   │   ├── Uploader.tsx                  # decode + flip + downscale on canvas, then worker
+│   │   └── CameraModal.tsx               # desktop getUserMedia capture (focus-trapped)
+│   ├── workers/                          # Web Worker source (bg-removal off the main thread)
+│   └── lib/                              # client-only helpers (api.ts, bg-removal-client.ts, formatExpiry, etc.)
+├── tests/                                # vitest
 ├── public/
 └── .env.example
 ```
+
+> Note: there is no `server/processor/` directory anymore. Both bg-removal and the horizontal flip run in the browser (the flip via `<canvas>` `scale(-1, 1)`, bg-removal inside a Web Worker), and the resulting PNG is uploaded straight to R2.
 
 **Why Option C, not a monorepo:** for a single-screen single-consumer app, monorepo ceremony (two `package.json`, two CI configs, workspace tooling) costs ~2× boilerplate before any feature code. The `app/` vs `server/` split inside one repo gives us the same architectural clarity — if we ever need to extract a standalone API, it's `mv server/ ../api/` plus ~50 lines of HTTP framework, not a refactor.
 
 ### 9.2 Module boundaries
 
-Each integration sits behind a **small public interface that hides a much larger implementation.** Callers depend on the shape, not on the SDK underneath. This keeps Route Handlers ignorant of `sharp`, `@imgly`, and the AWS S3 client — swapping providers means replacing one file, and tests can mock at the narrow interface instead of the underlying SDK.
+Each integration sits behind a **small public interface that hides a much larger implementation.** Callers depend on the shape, not on the SDK underneath. This keeps Route Handlers ignorant of the AWS S3 client and Uploader code ignorant of the bg-removal model — swapping providers means replacing one file, and tests can mock at the narrow interface instead of the underlying SDK.
 
 ```ts
-interface ImageProcessor { process(buf: Buffer, mime: string, originalName: string): Promise<ImageDTO>; }
-// Bg-removal moved to the browser; no server-side interface left.
-interface Flipper { flip(buf: Buffer): Promise<Buffer>; }
-interface Storage { put(buf: Buffer, mime: string): Promise<{ id: string; previewUrl: string }>;
-                    get(id: string): Promise<{ stream: ReadableStream; mime: string; bytes: number }>;
-                    head(id: string): Promise<{ lastModified: Date; bytes: number; mime: string }>;
-                    listExpired(cutoff: Date): Promise<string[]>;
-                    delete(id: string): Promise<void>; }
+// server/storage/r2.ts — the only server-side seam left after moving processing to the browser.
+interface Storage {
+  signPut(mime: string, bytes: number): Promise<{ id: string; uploadUrl: string;
+                                                  headers: Record<string, string>;
+                                                  previewUrl: string; expiresInSeconds: number }>;
+  get(id: string): Promise<{ stream: ReadableStream; mime: string; bytes: number }>;
+  head(id: string): Promise<{ lastModified: Date; bytes: number; mime: string }>;
+  listExpired(cutoff: Date): Promise<string[]>;
+  delete(id: string): Promise<void>;
+}
+
+// lib/bg-removal-client.ts — the only client-side seam.
+// Hides the @imgly model + the Web Worker plumbing behind two functions.
+function warmupModel(onProgress?: (pct: number) => void): Promise<void>;
+function removeBackgroundInWorker(blob: Blob): Promise<Blob>; // PNG with alpha
 ```
 
-No `MetadataStore` exists — R2's `LastModified` header is the source of truth for `expiresAt`. If richer queries are ever needed, the interface above is where a metadata store would slot in.
+No `MetadataStore` exists — R2's `LastModified` header is the source of truth for `expiresAt`. If richer queries are ever needed, an interface would slot in alongside `Storage`.
 
-Route Handlers wire these together; nothing in `server/` imports from `next/*`.
+Route Handlers wire `Storage` (+ `expiry`, `errors`, `env`) together; nothing in `server/` imports from `next/*`.
 
 ### 9.3 Body-size strategy
 
-10 MB max. Vercel Hobby has a 4.5 MB body limit on Route Handlers, so we use the [streaming upload](https://vercel.com/docs/functions/streaming) path with `Request.body` rather than `formData()`, validating size as bytes flow in. If we ever need bigger files, we cut over to **direct-to-R2 presigned PUT** — the `Storage` interface already hides the difference.
+10 MB max, **uploaded directly to R2** via a server-issued presigned PUT URL. The image bytes never cross the Vercel function, so we are not bound by the Hobby tier's 4.5 MB request-body limit. The `POST /api/images` handler only validates `{ filename, bytes, mime }` and signs the URL; the browser then `PUT`s the bytes to R2 with a progress-reporting `XMLHttpRequest`. Both client and server enforce `MAX_UPLOAD_BYTES = 10 * 1024 * 1024` and `mime === "image/png"` (the bg-removal pass always emits PNG).
 
 ### 9.4 Env validation
 
