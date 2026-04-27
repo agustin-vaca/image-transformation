@@ -28,6 +28,9 @@ export const UPLOAD_MIME_TYPE = "image/png" as const;
  */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+/** Human-friendly form of `MAX_UPLOAD_BYTES`, used in error messages. */
+export const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / 1024 / 1024;
+
 /**
  * Max edge (in CSS pixels) the client downscales the input to before running
  * bg-removal. Keeps WASM inference fast and the final PNG small enough to

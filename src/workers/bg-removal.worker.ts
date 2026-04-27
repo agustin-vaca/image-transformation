@@ -24,6 +24,7 @@ import {
   type PreTrainedModel,
   type Processor,
 } from "@huggingface/transformers";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "@/lib/api";
 
 type PreloadMsg = { id: number; type: "preload" };
 type RemoveMsg = {
@@ -50,6 +51,39 @@ const MODEL_ID = "onnx-community/BiRefNet-ONNX";
 type Loaded = { model: PreTrainedModel; processor: Processor };
 let loadPromise: Promise<Loaded> | undefined;
 
+// BiRefNet's Concat op binds 17 storage buffers per compute stage, and the
+// generated WGSL Concat shader exceeds 127 levels of else-if nesting. Both
+// limits are commonly hit on Windows/D3D12 adapters where
+// `maxStorageBuffersPerShaderStage` defaults to 8. When that happens, the
+// async validation errors don't reject inference — transformers.js returns
+// garbage tensors and the resulting mask balloons the output PNG into
+// hundreds of megabytes. Detecting this up-front lets us skip WebGPU
+// cleanly and use the slower-but-correct WASM backend instead.
+const BIREFNET_MIN_STORAGE_BUFFERS = 17;
+
+async function isWebGpuViable(): Promise<boolean> {
+  const gpu = (
+    globalThis as unknown as {
+      navigator?: {
+        gpu?: {
+          requestAdapter: () => Promise<{
+            limits: { maxStorageBuffersPerShaderStage?: number };
+          } | null>;
+        };
+      };
+    }
+  ).navigator?.gpu;
+  if (!gpu) return false;
+  try {
+    const adapter = await gpu.requestAdapter();
+    if (!adapter) return false;
+    const limit = adapter.limits.maxStorageBuffersPerShaderStage ?? 0;
+    return limit >= BIREFNET_MIN_STORAGE_BUFFERS;
+  } catch {
+    return false;
+  }
+}
+
 async function tryLoad(
   device: "webgpu" | "wasm",
   dtype: "fp16" | "fp32",
@@ -71,27 +105,25 @@ function getModel(
 ): Promise<Loaded> {
   if (loadPromise) return loadPromise;
   // WebGPU + fp16 ≈ 110 MB and runs an order of magnitude faster than
-  // WASM. If WebGPU isn't available (Safari, older Chrome on Linux,
-  // strict enterprise policies) we fall back to WASM + fp32 (~220 MB)
-  // which is universal but slower. Quality is effectively identical.
+  // WASM. If WebGPU isn't viable for BiRefNet on this device, or if it
+  // fails to load, we fall back to WASM + fp32 (~220 MB) which is
+  // universal but slower. Quality is effectively identical.
   const attempt = (async () => {
-    try {
-      return await tryLoad("webgpu", "fp16", onProgress);
-    } catch (webgpuError) {
+    if (await isWebGpuViable()) {
       try {
-        return await tryLoad("wasm", "fp32", onProgress);
-      } catch (wasmError) {
-        // Surface both root causes so the client error toast / telemetry
-        // isn't just "wasm failed". The WebGPU error is the original
-        // failure that triggered the fallback in the first place.
-        const webgpuMessage =
-          webgpuError instanceof Error ? webgpuError.message : String(webgpuError);
-        const wasmMessage =
-          wasmError instanceof Error ? wasmError.message : String(wasmError);
-        throw new Error(
-          `Failed to load background-removal model. WebGPU: ${webgpuMessage}. WASM: ${wasmMessage}`,
-        );
+        return await tryLoad("webgpu", "fp16", onProgress);
+      } catch {
+        // fall through to WASM
       }
+    }
+    try {
+      return await tryLoad("wasm", "fp32", onProgress);
+    } catch (wasmError) {
+      const wasmMessage =
+        wasmError instanceof Error ? wasmError.message : String(wasmError);
+      throw new Error(
+        `Failed to load background-removal model: ${wasmMessage}`,
+      );
     }
   })();
   // Only cache the success. If both backends fail (e.g. transient network
@@ -173,7 +205,19 @@ async function applyMask(
   const cctx = canvas.getContext("2d");
   if (!cctx) throw new Error("OffscreenCanvas 2D context unavailable");
   cctx.putImageData(new ImageData(rgba, w, h), 0, 0);
-  return canvas.convertToBlob({ type: "image/png" });
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  // A correctly-composited ≤1024×1024 RGBA PNG should be a couple of MB at
+  // most. If it's larger than the upload limit, the model almost certainly
+  // produced a degenerate mask (e.g. WebGPU validation failures returning
+  // noise) — surface that as a clear error instead of letting the API
+  // reject the upload with a cryptic byte count.
+  if (blob.size > MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `Background-removal output is too large (${(blob.size / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_MB} MB). ` +
+        `Please retry — if this keeps happening your browser's GPU backend may be unsupported.`,
+    );
+  }
+  return blob;
 }
 
 ctx.onmessage = async (ev: MessageEvent<InMsg>) => {
