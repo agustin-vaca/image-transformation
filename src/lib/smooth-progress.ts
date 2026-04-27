@@ -47,13 +47,21 @@ export function createSmoothProgress(
   }
 
   function tick() {
+    raf = 0;
     const elapsed = performance.now() - startedAt;
     const linear = Math.min(SOFT_CAP, (elapsed / totalEtaMs) * SOFT_CAP);
     if (linear > value) {
       value = linear;
       emit();
     }
-    raf = requestAnimationFrame(tick);
+    // Once the linear climb has reached SOFT_CAP the value will not move
+    // again until `complete()` snaps to 100% — so there's nothing to
+    // redraw. Stop the rAF loop instead of burning 60fps until the
+    // pipeline finishes (matters if the network stalls or the user
+    // backgrounds the tab).
+    if (value < SOFT_CAP) {
+      raf = requestAnimationFrame(tick);
+    }
   }
 
   return {

@@ -63,6 +63,16 @@ const STAGE_MESSAGES: Record<Stage, ReadonlyArray<string>> = {
 };
 const MESSAGE_ROTATION_MS = 2500;
 
+// Plain-English label per stage for the screen-reader live region. Kept
+// separate from the funny rotating copy so assistive tech gets a stable,
+// informative phrase exactly when the pipeline advances (and not on every
+// percentage tick or every 2.5s when the headline rotates).
+const STAGE_ANNOUNCEMENTS: Record<Stage, string> = {
+  warmup: "Loading background-removal model.",
+  removing: "Removing background and flipping image.",
+  uploading: "Uploading image.",
+};
+
 /**
  * Decode the input file, downscale so its longest edge is at most
  * `CLIENT_MAX_EDGE_PX`, and apply a horizontal flip in the same pass.
@@ -100,6 +110,7 @@ function uploadToR2WithProgress(
   headers: Record<string, string>,
   body: Blob,
   onProgress: (pct: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -109,10 +120,18 @@ function uploadToR2WithProgress(
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onabort = () => reject(new DOMException("Upload aborted", "AbortError"));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`Upload rejected (status ${xhr.status})`));
     };
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
     xhr.send(body);
   });
 }
@@ -147,6 +166,20 @@ export function Uploader() {
   const [messageIndex, setMessageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // Track the in-flight upload so we can stop the rAF loop and abort the
+  // XHR if the component unmounts mid-upload (route change, parent
+  // remount, etc.). Without this React would warn about setStatus on an
+  // unmounted component and the XHR would continue uselessly in the
+  // background.
+  const activeSmoothRef = useRef<{ stop: () => void } | null>(null);
+  const activeAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      activeSmoothRef.current?.stop();
+      activeAbortRef.current?.abort();
+    },
+    [],
+  );
   const busy = status.kind === "processing";
   const stage: Stage | null = status.kind === "processing" ? status.stage : null;
 
@@ -227,6 +260,9 @@ export function Uploader() {
         currentProgress = pct;
         emit();
       });
+      const abort = new AbortController();
+      activeSmoothRef.current = smooth;
+      activeAbortRef.current = abort;
       smooth.start(totalEta);
       enterStage(currentStage);
 
@@ -266,6 +302,7 @@ export function Uploader() {
           () => {
             /* upload progress events ignored for display — see comment above */
           },
+          abort.signal,
         );
         smooth.complete();
         const tUploadDone = performance.now();
@@ -286,10 +323,17 @@ export function Uploader() {
         router.push(signed.image.shareUrl);
       } catch (err) {
         smooth.stop();
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Component unmounted mid-upload — nothing to surface.
+          return;
+        }
         setStatus({
           kind: "error",
           message: err instanceof Error ? err.message : "Upload failed",
         });
+      } finally {
+        if (activeSmoothRef.current === smooth) activeSmoothRef.current = null;
+        if (activeAbortRef.current === abort) activeAbortRef.current = null;
       }
     },
     [router],
@@ -466,8 +510,13 @@ export function Uploader() {
         onCapture={onCameraCapture}
       />
 
+      {/* Announce only stage transitions (warmup -> removing -> uploading)
+          rather than the rotating funny headline or every percentage change.
+          Otherwise screen readers get spammed every 2.5s by the rotating
+          copy and on every progress emit. `STAGE_ANNOUNCEMENTS` keeps the
+          phrase plain (no jokes) so the announcement is informative. */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {busy ? `${headline} ${progress}%` : ""}
+        {stage ? STAGE_ANNOUNCEMENTS[stage] : ""}
       </div>
 
       {status.kind === "error" && (
