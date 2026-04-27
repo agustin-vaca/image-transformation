@@ -1,7 +1,7 @@
 ---
 id: 005
 title: Wire real ImageProcessor pipeline
-status: in-progress
+status: done
 blocked_by: [002, 003, 004]
 slice: vertical
 owner: copilot

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Manrope, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -25,6 +25,15 @@ export const metadata: Metadata = {
   title: "MirrorMe — Say hi to yourself.",
   description:
     "Drop in a photo. We remove the background and flip it horizontally. That's it. Shareable link, 24-hour TTL.",
+};
+
+// Mobile rendering + browser-chrome theming. Without `width=device-width`
+// mobile Safari renders at desktop width; `themeColor` picks up our brand
+// primary in Android Chrome's URL bar and the iOS PWA status bar.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#4648d4",
 };
 
 export default function RootLayout({
