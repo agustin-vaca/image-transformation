@@ -127,7 +127,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 
 | Concern              | Choice                                          | Why |
 |----------------------|-------------------------------------------------|-----|
-| Background removal   | **`@imgly/background-removal-node`** (local)    | Zero quota, zero API key to leak, runs in our process. Wrapped behind a `BackgroundRemover` interface so we can swap to a SaaS later without touching callers. |
+| Background removal   | **`@imgly/background-removal`** (browser, WASM)    | Runs in the visitor's browser. Zero quota, zero API key, **zero server CPU**. Original server-side variant (`@imgly/background-removal-node`) had a ~14 s CPU floor on a warm Vercel lambda. |
 | Image hosting        | **Cloudflare R2** (S3-compatible)               | Free tier covers our 24-hour-TTL workload comfortably; **zero egress fees** — important because every download streams through `/api/images/:id/download`. |
 | Metadata store       | **None** \u2014 R2 object metadata (`LastModified`) is the source of truth for `expiresAt` | Eliminates a moving part. Storage already returns the timestamp we need; adding a database would just duplicate it. Easy to introduce later behind a `MetadataStore` module if richer queries are needed. |
 | Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
@@ -162,7 +162,7 @@ type ImageDTO = {
 | GET    | `/api/images/:id/download`     | —                     | Streams bytes with `Content-Disposition: attachment; filename="..."`; `EXPIRED` past TTL |
 | DELETE | `/api/images/:id`              | —                     | `ApiResponse<{ id }>` (idempotent) — internal/ops only, **not** exposed in UI         |
 
-Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `INTERNAL`.
+Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `STORAGE_FAILED`, `NOT_FOUND`, `EXPIRED`, `INTERNAL`.
 
 > Note: `DELETE /api/images/:id` is exposed in the UI on `/i/[id]` (“Delete now” button) and is also called by the daily cleanup cron. GETs never delete.
 
@@ -172,7 +172,7 @@ Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAI
 
 | Risk                                            | Mitigation                                                |
 |-------------------------------------------------|-----------------------------------------------------------|
-| Free-tier bg-removal quota runs out mid-review  | Fallback to local `@imgly/background-removal`             |
+| Free-tier bg-removal quota runs out mid-review  | N/A — bg-removal runs in the browser, no quota             |
 | Large uploads hang serverless function          | Hard size limit + streamed processing + timeout           |
 | API keys leak                                   | `.env` only, validated with `zod` at boot, never logged   |
 | Orphaned storage objects after failed flow      | Wrap in transactional cleanup (delete on any step error)  |
@@ -188,7 +188,7 @@ Error codes: `INVALID_FILE`, `FILE_TOO_LARGE`, `BG_REMOVAL_FAILED`, `STORAGE_FAI
 
 All resolved — see §5 (services) and §9 (architecture). Kept for posterity:
 
-- [x] Which bg-removal provider? → `@imgly/background-removal-node` (§5)
+- [x] Which bg-removal provider? → `@imgly/background-removal` (browser, WASM) (§5)
 - [x] Which storage provider? → Cloudflare R2 (§5)
 - [x] Max file size? → **10 MB** (enforced client + server)
 - [x] Cleanup mechanism? → Vercel Cron daily **and** lazy-on-read (§5)
@@ -215,8 +215,8 @@ One Next.js app, one deploy. Business logic is **framework-agnostic** and lives 
 ├── server/                           # framework-agnostic, zero next/* imports
 │   ├── processor/
 │   │   ├── index.ts                   # ImageProcessor interface (single seam)
-│   │   ├── r2-image-processor.ts       # bg-removal → flip → R2 upload
-│   │   ├── bg-removal.ts              # @imgly wrapper
+│   │   ├── r2-image-processor.ts       # flip → R2 upload (bg-removal happens client-side)
+│   │   ├── # bg-removal happens in components/Uploader.tsx via @imgly/background-removal
 │   │   └── flip.ts                    # sharp().flop()
 │   ├── storage/
 │   │   └── r2.ts                      # @aws-sdk/client-s3 against R2
@@ -238,7 +238,7 @@ Each integration sits behind a **small public interface that hides a much larger
 
 ```ts
 interface ImageProcessor { process(buf: Buffer, mime: string, originalName: string): Promise<ImageDTO>; }
-interface BackgroundRemover { remove(buf: Buffer, mime: string): Promise<Buffer>; }
+// Bg-removal moved to the browser; no server-side interface left.
 interface Flipper { flip(buf: Buffer): Promise<Buffer>; }
 interface Storage { put(buf: Buffer, mime: string): Promise<{ id: string; previewUrl: string }>;
                     get(id: string): Promise<{ stream: ReadableStream; mime: string; bytes: number }>;

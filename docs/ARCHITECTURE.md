@@ -14,15 +14,16 @@ What the app talks to from outside.
 flowchart LR
     user([Visitor])
     browser[Browser<br/>Next.js client]
+    imgly[["@imgly<br/>background-removal<br/>(WASM, in-browser)"]]
     server[Next.js server<br/>Route Handlers]
-    imgly[["@imgly<br/>background-removal-node<br/>(in-process)"]]
     sharp[["sharp<br/>(in-process)"]]
     r2[(Cloudflare R2<br/>S3-compatible)]
     cron[Vercel Cron<br/>daily]
 
     user -- "drag &amp; drop image" --> browser
-    browser -- "POST /api/images" --> server
-    server -- "remove(buf, mime)" --> imgly
+    browser -- "removeBackground(file)" --> imgly
+    imgly -- "transparent PNG" --> browser
+    browser -- "POST /api/images (PNG)" --> server
     server -- "flop()" --> sharp
     server -- "PutObject" --> r2
     browser -- "GET /i/:id" --> server
@@ -35,7 +36,7 @@ flowchart LR
 
 | Concern | Choice | Why |
 |---|---|---|
-| Background removal | `@imgly/background-removal-node` (local) | Zero quota, no API key to leak, runs in-process. |
+| Background removal | `@imgly/background-removal` (browser, WASM) | Runs in the visitor's browser. Zero quota, zero server CPU, no API key. |
 | Image processing | `sharp` | `.flop()` is the simplest possible horizontal flip. |
 | Storage | Cloudflare R2 | S3-compatible, **zero egress** — every download streams through us. |
 | Hosting | Vercel | Native Next.js, built-in Cron, generous free tier. |
@@ -69,7 +70,6 @@ flowchart TB
 
     subgraph server["server/ — framework-agnostic"]
         proc["processor/<br/>R2ImageProcessor"]
-        bg[processor/bg-removal.ts]
         flip[processor/flip.ts]
         storage[storage/r2.ts]
         env[env.ts<br/>zod-validated]
@@ -90,7 +90,6 @@ flowchart TB
     download --> expiry
     cleanup --> storage
     cleanup --> expiry
-    proc --> bg
     proc --> flip
     proc --> storage
     proc --> expiry
@@ -107,12 +106,12 @@ flowchart TB
     classDef serverNode fill:#3949ab,stroke:#1a237e,color:#fff
     classDef appNode fill:#ad1457,stroke:#560027,color:#fff
     classDef libNode fill:#2e7d32,stroke:#1b5e20,color:#fff
-    class proc,bg,flip,storage,env,errors,expiry serverNode
+    class proc,flip,storage,env,errors,expiry serverNode
     class page,ipage,upload,meta,download,cleanup appNode
     class api libNode
 ```
 
-**Single integration seams.** Each external dependency sits behind a small public interface that hides a much larger implementation. `R2ImageProcessor.process(buf, mime, name)` is the only entry point for the entire `bg-removal → flip → upload` pipeline; Route Handlers don't know `sharp` or `@imgly` exist. Same pattern for `R2Storage` (hides the S3 SDK), `BackgroundRemover` (hides @imgly model loading), and `Flipper` (hides sharp's pipeline). The payoff: swapping a provider is a one-file change, and tests mock the narrow interface instead of the SDK underneath.
+**Single integration seams.** Each external dependency sits behind a small public interface that hides a much larger implementation. `R2ImageProcessor.process(buf, mime, name)` is the only entry point for the server-side `flip → upload` pipeline; Route Handlers don't know `sharp` exists. Same pattern for `R2Storage` (hides the S3 SDK) and `Flipper` (hides sharp's pipeline). On the client, `Uploader.tsx` lazy-loads `@imgly/background-removal` and only after the model returns a transparent PNG does it POST to the server. The payoff: swapping any single provider is a one-file change, and tests mock the narrow interface instead of the SDK underneath.
 
 ---
 
@@ -123,20 +122,20 @@ sequenceDiagram
     autonumber
     actor U as Visitor
     participant UI as Uploader.tsx
+    participant BG as @imgly/background-removal<br/>(browser WASM)
     participant API as POST /api/images
     participant P as R2ImageProcessor
-    participant BG as BackgroundRemover<br/>(@imgly)
     participant F as Flipper<br/>(sharp.flop)
     participant S as R2Storage
     participant R2 as Cloudflare R2
 
     U->>UI: drop image
     Note over UI: client-side check<br/>(mime, under 10 MB)
-    UI->>API: multipart/form-data
-    Note over API: server-side check<br/>(mime, under 10 MB)
-    API->>P: process(buf, mime, name)
-    P->>BG: remove(buf, mime)
-    BG-->>P: PNG with alpha
+    UI->>BG: removeBackground(file)
+    BG-->>UI: PNG with alpha
+    UI->>API: multipart/form-data (PNG)
+    Note over API: server-side check<br/>(mime=image/png, under 10 MB)
+    API->>P: process(buf, name)
     P->>F: flip(png)
     F-->>P: mirrored PNG
     P->>S: put(png, image/png)
@@ -148,7 +147,7 @@ sequenceDiagram
     UI->>U: router.push to /i/[id]
 ```
 
-Every error along the way is mapped to a typed `ErrorCode` (`INVALID_FILE`, `BG_REMOVAL_FAILED`, `STORAGE_FAILED`, …) by `toErrorResponse()` so the underlying error message never leaks to the client.
+Every error along the way is mapped to a typed `ErrorCode` (`INVALID_FILE`, `STORAGE_FAILED`, …) by `toErrorResponse()` so the underlying error message never leaks to the client. Background-removal errors now surface in the browser before the network request is made.
 
 ---
 
@@ -245,7 +244,7 @@ type ApiResponse<T> =
 | Trace a single upload end-to-end | [`Uploader.tsx`](../src/components/Uploader.tsx) → [`api/images/route.ts`](../src/app/api/images/route.ts) → [`r2-image-processor.ts`](../src/server/processor/r2-image-processor.ts) |
 | Understand the share page | [`app/i/[id]/page.tsx`](../src/app/i/[id]/page.tsx) + [`ShareActions.tsx`](../src/app/i/[id]/ShareActions.tsx) |
 | Add a new storage backend | Implement the `R2Storage`-shaped interface in [`server/storage/r2.ts`](../src/server/storage/r2.ts) |
-| Swap the bg-removal provider | Replace [`server/processor/bg-removal.ts`](../src/server/processor/bg-removal.ts) (the public `remove(buf, mime)` shape is the contract) |
+| Swap the bg-removal provider | Edit the imgly call inside [`components/Uploader.tsx`](../src/components/Uploader.tsx) (or move it back server-side by reintroducing a `BackgroundRemover` seam in `R2ImageProcessor`) |
 | Tune retention | [`server/expiry.ts`](../src/server/expiry.ts) — single `RETENTION_MS` constant |
 
 ---
@@ -254,17 +253,17 @@ type ApiResponse<T> =
 
 Why each piece of the stack was chosen, what it cost, and what we'd reach for if requirements changed.
 
-### Background removal — `@imgly/background-removal-node` (local, in-process)
+### Background removal — `@imgly/background-removal` (browser, WASM)
 
 | Considered | Verdict |
 |---|---|
-| **`@imgly/background-removal-node`** ✅ | Runs locally with an ONNX model. No API key, no quota, no per-image cost, no network hop. |
-| remove.bg / Photoroom / Pixian | Better quality on hard cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint and the "easy to demo" goal. |
-| Browser-side `@imgly/background-removal` | Would offload compute from our server, but ships a ~30 MB WASM bundle on first use and locks out older devices. Server-side keeps the client tiny. |
+| **Browser-side `@imgly/background-removal`** ✅ | Runs in the visitor's browser via WASM (and WebGPU when available). Zero server CPU, zero quota, no API key. The Vercel lambda doesn't need the 250 MB native ORT bundle anymore. |
+| Server-side `@imgly/background-removal-node` | Original choice (PR #14). Hit a ~14 s CPU floor on a warm Vercel lambda — model inference is the floor and there's no caching/ORT-tuning that beats it. |
+| remove.bg / Photoroom / Pixian | Better quality on hard cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint. |
 
-**Cost:** the ONNX model is heavy (`~85 MB` of weights). We mitigate with [`scripts/prune-imgly-weights.js`](../scripts/prune-imgly-weights.js), a `prebuild` step that drops unused model variants so the Vercel function bundle stays under the 250 MB limit. Cold starts on Vercel can take 10–15 s the first time — that's why [`api/images/route.ts`](../src/app/api/images/route.ts) sets `maxDuration = 60`.
+**Cost:** the model is ~22 MB (`isnet_quint8`) plus ~10 MB of WASM. We preload on first user intent (hover, focus, drag-enter) so it usually finishes before the visitor picks a file, and we render an explicit progress bar otherwise. Old/low-end devices may struggle — fallback to a SaaS provider would be a one-component change.
 
-**Swap path:** replace [`server/processor/bg-removal.ts`](../src/server/processor/bg-removal.ts) with a SaaS client. Nothing else changes.
+**Swap path:** edit the imgly call inside [`components/Uploader.tsx`](../src/components/Uploader.tsx). To move bg-removal back to the server, reintroduce the previous `BackgroundRemover` seam in [`r2-image-processor.ts`](../src/server/processor/r2-image-processor.ts).
 
 ### Image flip — `sharp`
 
@@ -323,7 +322,7 @@ Considered Jest. Vitest is faster, has native ESM/TS support, and `@vitest/cover
 
 ### Package manager — pnpm
 
-`@imgly/background-removal-node` and `sharp` both ship platform-specific binaries; pnpm's strict dependency resolution surfaces missing peers loudly instead of silently picking up a hoisted version. The `pnpm.onlyBuiltDependencies` allowlist also gives us explicit control over which postinstall scripts run.
+`sharp` ships platform-specific binaries; pnpm's strict dependency resolution surfaces missing peers loudly instead of silently picking up a hoisted version. The `pnpm.onlyBuiltDependencies` allowlist also gives us explicit control over which postinstall scripts run.
 
 ### Styling — Tailwind v4
 
