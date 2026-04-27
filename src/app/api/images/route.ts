@@ -3,6 +3,7 @@ import { R2ImageProcessor } from "@/server/processor/r2-image-processor";
 import { createR2StorageFromEnv } from "@/server/storage/r2";
 import { getEnv } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
+import { PerfTimer } from "@/server/perf";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
 import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
 
@@ -13,8 +14,11 @@ export const maxDuration = 60;
 const ACCEPTED_MIMES = new Set<string>(ACCEPTED_MIME_TYPES);
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse<ImageDTO>>> {
+  const timer = new PerfTimer("images.POST");
+  let inBytes = 0;
+  let outBytes = 0;
   try {
-    const form = await request.formData();
+    const form = await timer.stage("parseForm", () => request.formData());
     const entry = form.get("file");
 
     if (!(entry instanceof File)) {
@@ -33,18 +37,24 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
       );
     }
 
-    const buffer = Buffer.from(await entry.arrayBuffer());
+    const buffer = await timer.stage("readBuffer", async () =>
+      Buffer.from(await entry.arrayBuffer()),
+    );
+    inBytes = buffer.byteLength;
     const env = getEnv();
     // Build shareUrl from the validated APP_BASE_URL — the request's Host
     // header is spoofable behind a misconfigured proxy.
     const appBaseUrl = env.APP_BASE_URL.replace(/\/+$/, "");
     const storage = createR2StorageFromEnv(env);
     const processor = new R2ImageProcessor(appBaseUrl, storage);
-    const dto = await processor.process(buffer, entry.type, entry.name);
+    const dto = await processor.process(buffer, entry.type, entry.name, timer);
+    outBytes = dto.bytes;
 
     return NextResponse.json({ ok: true, data: dto });
   } catch (err) {
     const { status, body } = toErrorResponse(err);
     return NextResponse.json(body, { status });
+  } finally {
+    timer.log({ inBytes, outBytes });
   }
 }

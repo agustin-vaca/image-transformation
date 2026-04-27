@@ -3,6 +3,7 @@ import { R2ImageProcessor } from "@/server/processor/r2-image-processor";
 import { ApiError, ErrorCodes } from "@/server/errors";
 import type { BackgroundRemover } from "@/server/processor/bg-removal";
 import type { Flipper } from "@/server/processor/flip";
+import type { Resizer } from "@/server/processor/resize";
 import type { R2Storage } from "@/server/storage/r2";
 import { RETENTION_MS } from "@/server/expiry";
 
@@ -36,6 +37,13 @@ function makeFlipper(out: Buffer = Buffer.from([2, 2, 2, 2])): Flipper {
   } as unknown as Flipper;
 }
 
+/** Passthrough resizer so unit tests can use synthetic byte buffers. */
+function makeResizer(): Resizer {
+  return {
+    downscale: vi.fn(async (b: Buffer) => b),
+  } as unknown as Resizer;
+}
+
 let consoleErrorSpy: ReturnType<typeof vi.spyOn> | undefined;
 beforeEach(() => {
   consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -54,6 +62,7 @@ describe("R2ImageProcessor.process", () => {
       storage,
       bg,
       flip,
+      makeResizer(),
     );
 
     const input = Buffer.from([99]);
@@ -80,6 +89,7 @@ describe("R2ImageProcessor.process", () => {
       makeStorage(),
       makeBgRemover(),
       makeFlipper(),
+      makeResizer(),
     );
 
     const dto = await processor.process(Buffer.from([1]), "image/webp", "photo.WEBP");
@@ -95,7 +105,7 @@ describe("R2ImageProcessor.process", () => {
       ),
     } as unknown as BackgroundRemover;
     const storage = makeStorage();
-    const processor = new R2ImageProcessor("https://app", storage, bg, makeFlipper());
+    const processor = new R2ImageProcessor("https://app", storage, bg, makeFlipper(), makeResizer());
 
     await expect(processor.process(Buffer.from([1]), "image/png", "x.png"))
       .rejects.toMatchObject({ code: ErrorCodes.BG_REMOVAL_FAILED });
@@ -111,7 +121,7 @@ describe("R2ImageProcessor.process", () => {
       ),
     } as unknown as Flipper;
     const storage = makeStorage();
-    const processor = new R2ImageProcessor("https://app", storage, makeBgRemover(), flip);
+    const processor = new R2ImageProcessor("https://app", storage, makeBgRemover(), flip, makeResizer());
 
     await expect(processor.process(Buffer.from([1]), "image/png", "x.png"))
       .rejects.toMatchObject({ code: ErrorCodes.INTERNAL });
@@ -128,7 +138,7 @@ describe("R2ImageProcessor.process", () => {
       get: vi.fn(),
       delete: vi.fn(),
     } as unknown as R2Storage;
-    const processor = new R2ImageProcessor("https://app", storage, makeBgRemover(), makeFlipper());
+    const processor = new R2ImageProcessor("https://app", storage, makeBgRemover(), makeFlipper(), makeResizer());
 
     await expect(processor.process(Buffer.from([1]), "image/png", "x.png"))
       .rejects.toMatchObject({ code: ErrorCodes.STORAGE_FAILED });

@@ -11,9 +11,11 @@
  *
  * We ALSO drop the @imgly/background-removal-node model weights (~127 MB
  * of extension-less hash-named files in dist/). They're fetched from
- * IMG.LY's CDN at runtime via `publicPath` instead — Vercel's Turbopack
- * NFT tracer silently drops extension-less files from the function bundle,
- * so bundling them would 502 anyway with ENOENT.
+ * IMG.LY's CDN at runtime via `publicPath` instead. We attempted bundling
+ * them via `outputFileTracingIncludes`, but Turbopack rewrites
+ * `import.meta.url` in server bundles, so `createRequire().resolve()`
+ * throws at runtime no matter what's traced — leaving the weights as dead
+ * weight in the deployed lambda.
  *
  * Runs only on Vercel (or when FORCE_PRUNE_IMGLY=1) so local dev is
  * unaffected.
