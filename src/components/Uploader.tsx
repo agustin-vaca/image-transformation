@@ -14,6 +14,7 @@ import {
   removeBackgroundInWorker,
   warmupModel,
 } from "@/lib/bg-removal-client";
+import { CameraModal } from "@/components/CameraModal";
 
 type Status =
   | { kind: "idle" }
@@ -111,10 +112,12 @@ export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [messageIndex, setMessageIndex] = useState(() =>
     Math.floor(Math.random() * PROCESSING_MESSAGES.length),
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const busy =
     status.kind === "loadingModel" ||
     status.kind === "removingBackground" ||
@@ -230,6 +233,34 @@ export function Uploader() {
     if (file) void upload(file);
   };
 
+  // Desktop browsers expose `mediaDevices.getUserMedia` so we can show the
+  // live preview modal. Mobile browsers also expose it but the native
+  // `<input capture>` flow is more familiar there, so we prefer that when
+  // the device has a coarse pointer (touch).
+  const onTakePhoto = useCallback(() => {
+    if (busy) return;
+    onIntent();
+    const isCoarse =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(pointer: coarse)").matches;
+    const hasGetUserMedia =
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia;
+    if (isCoarse || !hasGetUserMedia) {
+      cameraInputRef.current?.click();
+    } else {
+      setCameraOpen(true);
+    }
+  }, [busy, onIntent]);
+
+  const onCameraCapture = useCallback(
+    (file: File) => {
+      setCameraOpen(false);
+      void upload(file);
+    },
+    [upload],
+  );
+
   // The headline is always one of the funny rotating messages while busy, so
   // the first upload (which has to download the model) feels the same as any
   // subsequent one. Phase-specific detail (percentages) lives below the bar.
@@ -314,20 +345,53 @@ export function Uploader() {
               {dragOver ? "Drop to upload" : "Drop your image here"}
             </span>
             <span className="text-sm text-on-surface-variant">
-              or click to browse
+              or pick an option below
             </span>
-            <span
-              className="mt-3 inline-flex items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-[0_4px_0_0_var(--color-primary-press)] transition-all active:translate-y-[2px] active:shadow-none"
-              aria-hidden="true"
-            >
-              Choose image
-            </span>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <span
+                className="inline-flex items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-[0_4px_0_0_var(--color-primary-press)] transition-all active:translate-y-0.5 active:shadow-none"
+                aria-hidden="true"
+              >
+                Choose image
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  // The label wraps this button; suppress the click that
+                  // would otherwise also open the file picker.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTakePhoto();
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/40 bg-surface-container px-6 py-3 text-sm font-semibold tracking-wide text-primary transition-all hover:bg-surface-container-high active:translate-y-0.5"
+              >
+                <CameraIcon />
+                Take photo
+              </button>
+            </div>
             <span className="mt-2 text-xs text-on-surface-variant">
               PNG, JPEG, or WebP · up to 10 MB · processed in your browser
             </span>
           </>
         )}
       </label>
+
+      {/* Mobile fallback: native camera capture via a hidden input. Lives
+          outside the drop-zone label so its click never propagates back. */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="sr-only"
+        onChange={onFileChange}
+      />
+
+      <CameraModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={onCameraCapture}
+      />
 
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {statusText}
@@ -386,6 +450,26 @@ function UploadIcon() {
         strokeLinejoin="round"
         d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"
       />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 7h3l2-2h6l2 2h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1z"
+      />
+      <circle cx="12" cy="13" r="3.5" />
     </svg>
   );
 }
