@@ -206,8 +206,17 @@ export function Uploader() {
         // bytes (no Vercel 4.5 MB body limit, no sharp on the lambda).
         setStatus({ kind: "removingBackground" });
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
+        // imgly's removeBackground accepts Blob/ImageData/ArrayBuffer/Uint8Array/string
+        // — passing the canvas directly throws "undefined is not iterable" inside the
+        // library, so encode the flipped+downscaled canvas to a PNG Blob first.
+        const flippedBlob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error("Canvas encode failed"))),
+            "image/png",
+          );
+        });
         const mod = await loadImgly();
-        const transparent = await mod.removeBackground(canvas, {
+        const transparent = await mod.removeBackground(flippedBlob, {
           model: "isnet_quint8",
           output: { format: "image/png" },
         });
