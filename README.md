@@ -70,3 +70,7 @@ Scripts:
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm lint` — ESLint
 - `pnpm test` / `pnpm test:watch` — vitest
+
+## License
+
+[MIT](LICENSE) © 2026 Agustin Vaca
