@@ -173,7 +173,9 @@ export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
-  const [messageIndex, setMessageIndex] = useState(0);
+  const [messageIndex, setMessageIndex] = useState(() =>
+    Math.floor(Math.random() * PROCESSING_MESSAGES.length),
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const busy =
     status.kind === "loadingModel" ||
@@ -181,19 +183,19 @@ export function Uploader() {
     status.kind === "uploading" ||
     status.kind === "processing";
 
+  // Rotate the funny messages for the entire duration of any busy phase
+  // (model load, bg removal, upload, save). The list is constant; only the
+  // starting index (seeded in `upload`) and step are randomized so consecutive
+  // uploads vary.
   useEffect(() => {
-    if (status.kind !== "removingBackground" && status.kind !== "processing") {
-      return;
-    }
-    const offset =
+    if (!busy) return;
+    const step =
       1 + Math.floor(Math.random() * (PROCESSING_MESSAGES.length - 1));
-    let step = offset;
     const interval = setInterval(() => {
       setMessageIndex((i) => (i + step) % PROCESSING_MESSAGES.length);
-      step = 1;
     }, MESSAGE_ROTATION_MS);
     return () => clearInterval(interval);
-  }, [status.kind]);
+  }, [busy]);
 
   const intentTriggered = useRef(false);
   const onIntent = useCallback(() => {
@@ -219,6 +221,9 @@ export function Uploader() {
       }
 
       const tStart = performance.now();
+      // Seed a fresh random starting message for this upload. Done in the
+      // event handler (not in an effect) to avoid a cascading render.
+      setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
       try {
         // Phase 1: model + WASM. Always show loading state while we wait, even
         // if a silent intent-warmup is already in flight, so the UI never sits
@@ -298,16 +303,19 @@ export function Uploader() {
     if (file) void upload(file);
   };
 
-  const statusText =
+  // The headline is always one of the funny rotating messages while busy, so
+  // the first upload (which has to download the model) feels the same as any
+  // subsequent one. Phase-specific detail (percentages) lives below the bar.
+  const headline = busy ? PROCESSING_MESSAGES[messageIndex] : "";
+  const subText =
     status.kind === "loadingModel"
-      ? `Loading background-removal model… ${status.progress}%`
-      : status.kind === "removingBackground"
-        ? PROCESSING_MESSAGES[messageIndex]
-        : status.kind === "uploading"
-          ? `Uploading ${status.progress}%`
-          : status.kind === "processing"
-            ? "Saving\u2026"
-            : "";
+      ? `Warming up the model\u2026 ${status.progress}%`
+      : status.kind === "uploading"
+        ? `Uploading\u2026 ${status.progress}%`
+        : status.kind === "processing"
+          ? "Saving\u2026"
+          : "";
+  const statusText = subText ? `${headline} \u2014 ${subText}` : headline;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -342,7 +350,12 @@ export function Uploader() {
         {busy ? (
           <div className="flex flex-col items-center gap-3 w-full">
             <Spinner />
-            <span className="text-sm text-on-surface-variant">{statusText}</span>
+            <span
+              key={messageIndex}
+              className="text-sm text-on-surface animate-in fade-in duration-300"
+            >
+              {headline}
+            </span>
             {(status.kind === "uploading" ||
               status.kind === "loadingModel") && (
               <div
@@ -362,6 +375,9 @@ export function Uploader() {
                   style={{ width: `${status.progress}%` }}
                 />
               </div>
+            )}
+            {subText && (
+              <span className="text-xs text-on-surface-variant">{subText}</span>
             )}
           </div>
         ) : (
