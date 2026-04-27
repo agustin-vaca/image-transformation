@@ -17,26 +17,50 @@ import {
 import { createSmoothProgress, PhaseEtaTracker } from "@/lib/smooth-progress";
 import { CameraModal } from "@/components/CameraModal";
 
+type Stage = "warmup" | "removing" | "uploading";
+
 type Status =
   | { kind: "idle" }
-  | { kind: "processing"; progress: number }
+  | { kind: "processing"; progress: number; stage: Stage }
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 
-const PROCESSING_MESSAGES: ReadonlyArray<string> = [
-  "Removing background\u2026",
-  "Teaching pixels to face the other way\u2026",
-  "Asking the background to please leave\u2026",
-  "Negotiating with stubborn pixels\u2026",
-  "Holding up a tiny mirror\u2026",
-  "Convincing photons to swap sides\u2026",
-  "Yelling \u2018left is the new right\u2019\u2026",
-  "Polishing your reflection\u2026",
-  "Doing yoga with your photo\u2026",
-  "Almost there. Probably.\u2026",
-];
+// One list per pipeline stage. The headline rotates within the active
+// stage's list, so the copy actually tracks what the app is doing
+// (warming up the model, running bg-removal, or uploading to R2). Each
+// list mixes a plain "what’s happening" line with sillier ones so the
+// user always gets a hint of the real state.
+const STAGE_MESSAGES: Record<Stage, ReadonlyArray<string>> = {
+  warmup: [
+    "Waking up the AI\u2026",
+    "Downloading tiny brains\u2026",
+    "Pouring espresso for the model\u2026",
+    "Loading neural network\u2026",
+    "Booting up the pixel wizard\u2026",
+    "Stretching before the heavy lifting\u2026",
+  ],
+  removing: [
+    "Removing background\u2026",
+    "Asking the background to please leave\u2026",
+    "Negotiating with stubborn pixels\u2026",
+    "Teaching pixels to face the other way\u2026",
+    "Holding up a tiny mirror\u2026",
+    "Convincing photons to swap sides\u2026",
+    "Yelling \u2018left is the new right\u2019\u2026",
+    "Cutting you out of the scene\u2026",
+    "Erasing everything that isn\u2019t you\u2026",
+  ],
+  uploading: [
+    "Uploading your image\u2026",
+    "Beaming pixels to the cloud\u2026",
+    "Mailing your photo to the internet\u2026",
+    "Finding a good URL for it\u2026",
+    "Tucking your image into storage\u2026",
+    "Almost there. Probably.\u2026",
+  ],
+};
 const MESSAGE_ROTATION_MS = 2500;
 
 /**
@@ -120,26 +144,26 @@ export function Uploader() {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [messageIndex, setMessageIndex] = useState(() =>
-    Math.floor(Math.random() * PROCESSING_MESSAGES.length),
-  );
+  const [messageIndex, setMessageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const busy = status.kind === "processing";
+  const stage: Stage | null = status.kind === "processing" ? status.stage : null;
 
-  // Rotate the funny messages for the entire duration of any busy phase
-  // (model load, bg removal, upload, save). The list is constant; only the
-  // starting index (seeded in `upload`) and step are randomized so consecutive
-  // uploads vary.
+  // Rotate within the current stage's list on a timer. The fresh starting
+  // index for each stage is seeded by `upload` (an event handler) when it
+  // transitions stages, so we don't need to call setState during render or
+  // inside this effect on mount.
   useEffect(() => {
-    if (!busy) return;
-    const step =
-      1 + Math.floor(Math.random() * (PROCESSING_MESSAGES.length - 1));
+    if (!stage) return;
+    const list = STAGE_MESSAGES[stage];
+    if (list.length <= 1) return;
+    const step = 1 + Math.floor(Math.random() * (list.length - 1));
     const interval = setInterval(() => {
-      setMessageIndex((i) => (i + step) % PROCESSING_MESSAGES.length);
+      setMessageIndex((i) => (i + step) % list.length);
     }, MESSAGE_ROTATION_MS);
     return () => clearInterval(interval);
-  }, [busy]);
+  }, [stage]);
 
   const intentTriggered = useRef(false);
   const onIntent = useCallback(() => {
@@ -165,9 +189,6 @@ export function Uploader() {
       }
 
       const tStart = performance.now();
-      // Seed a fresh random starting message for this upload. Done in the
-      // event handler (not in an effect) to avoid a cascading render.
-      setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
 
       // Drive the bar from a single time-based estimator. Real progress
       // events from the underlying phases are intentionally NOT used for
@@ -180,10 +201,34 @@ export function Uploader() {
         (modelAlreadyWarm ? 0 : phaseEta.get("model")) +
         phaseEta.get("bgRemove") +
         phaseEta.get("upload");
-      const smooth = createSmoothProgress((pct) =>
-        setStatus({ kind: "processing", progress: pct }),
-      );
+      // Track the current stage independently of the bar so the headline
+      // reflects what is actually happening in the pipeline (warmup ->
+      // removing -> uploading) instead of just a percentage. The bar's
+      // value is mirrored in a local so stage transitions can re-emit
+      // status without reading stale React state.
+      let currentStage: Stage = modelAlreadyWarm ? "removing" : "warmup";
+      let currentProgress = 0;
+      const emit = () =>
+        setStatus({
+          kind: "processing",
+          progress: currentProgress,
+          stage: currentStage,
+        });
+      const enterStage = (next: Stage) => {
+        currentStage = next;
+        // Seed a random starting message for the new stage's list so the
+        // headline visibly turns over the moment the pipeline advances.
+        setMessageIndex(
+          Math.floor(Math.random() * STAGE_MESSAGES[next].length),
+        );
+        emit();
+      };
+      const smooth = createSmoothProgress((pct) => {
+        currentProgress = pct;
+        emit();
+      });
       smooth.start(totalEta);
+      enterStage(currentStage);
 
       try {
         // Phase 1: model + WASM (worker-hosted; main thread stays free).
@@ -191,6 +236,9 @@ export function Uploader() {
         const tModelReady = performance.now();
         if (!modelAlreadyWarm) {
           phaseEta.observe("model", tModelReady - tStart);
+        }
+        if (currentStage === "warmup") {
+          enterStage("removing");
         }
 
         // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
@@ -205,6 +253,7 @@ export function Uploader() {
         const transparent = await removeBackgroundInWorker(flippedBlob);
         const tBgDone = performance.now();
         phaseEta.observe("bgRemove", tBgDone - tModelReady);
+        enterStage("uploading");
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
         // bytes directly to R2.
@@ -293,11 +342,16 @@ export function Uploader() {
     [upload],
   );
 
-  // The headline is always one of the funny rotating messages while busy, so
-  // every upload feels the same regardless of whether the model needs to
-  // download. The single weighted progress bar (0→100% across model load +
-  // bg-removal + upload) lives below the headline.
-  const headline = busy ? PROCESSING_MESSAGES[messageIndex] : "";
+  // The headline rotates within the current stage's message list so the
+  // copy reflects what the pipeline is actually doing (warming up the
+  // model, removing the background, or uploading). The single bar below
+  // (0→100% across all stages, time-driven) is unaffected by which list
+  // is active.
+  const stageList = stage ? STAGE_MESSAGES[stage] : null;
+  const headline =
+    stageList && stageList.length > 0
+      ? (stageList[messageIndex % stageList.length] ?? stageList[0] ?? "")
+      : "";
   const progress = status.kind === "processing" ? status.progress : 0;
 
   return (
