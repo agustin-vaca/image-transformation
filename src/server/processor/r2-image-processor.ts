@@ -4,6 +4,7 @@ import type { ImageProcessor } from "./index";
 import { BackgroundRemover } from "./bg-removal";
 import { Flipper } from "./flip";
 import type { R2Storage } from "@/server/storage/r2";
+import { PerfTimer } from "@/server/perf";
 
 /** bg-removal → flip → R2 upload. */
 export class R2ImageProcessor implements ImageProcessor {
@@ -18,12 +19,24 @@ export class R2ImageProcessor implements ImageProcessor {
     file: Buffer,
     mime: string,
     filename: string,
+    timer?: PerfTimer,
   ): Promise<ImageDTO> {
-    const transparent = await this.bgRemover.remove(file, mime);
-    const flipped = await this.flipper.flip(transparent);
-    const { id, previewUrl } = await this.storage.put(flipped, "image/png");
+    const t = timer ?? new PerfTimer("processor.process");
+    const transparent = await t.stage("bgRemove", () =>
+      this.bgRemover.remove(file, mime),
+    );
+    const flipped = await t.stage("flip", () => this.flipper.flip(transparent));
+    const { id, previewUrl } = await t.stage("upload", () =>
+      this.storage.put(flipped, "image/png"),
+    );
 
     const createdAt = new Date();
+    if (!timer) {
+      t.log({
+        inBytes: file.byteLength,
+        outBytes: flipped.byteLength,
+      });
+    }
     return {
       id,
       shareUrl: `${this.appBaseUrl}/i/${id}`,
