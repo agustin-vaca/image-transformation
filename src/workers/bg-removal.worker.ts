@@ -1,19 +1,22 @@
 /// <reference lib="webworker" />
 //
 // Runs background removal off the main thread using @huggingface/transformers
-// (transformers.js) with the BiRefNet matting model (MIT-licensed,
-// commercially safe). Inference + WASM/WebGPU compile do enough sync work
-// to stall the main-thread renderer, so we keep them inside a dedicated
-// worker so the spinner / rotating headlines keep ticking.
+// (transformers.js) with the MODNet matting model (Apache-2.0, commercially
+// safe). Inference + WASM/WebGPU compile do enough sync work to stall the
+// main-thread renderer, so we keep them inside a dedicated worker so the
+// spinner / rotating headlines keep ticking.
 //
-// Why BiRefNet:
-// - Currently the leading open-weight matting model on hair / fur / glass /
-//   complex edges. Visibly cleaner than RMBG-1.4 and the ISNet variants.
-// - MIT licensed (no non-commercial caveat).
-// - Bigger weights (~110 MB fp16, ~220 MB fp32). Mitigated by on-intent
-//   preload + the smooth-progress UI absorbing a longer cold load. We try
-//   WebGPU + fp16 first for fast inference; fall back to WASM + fp32 on
-//   browsers/devices that lack WebGPU.
+// Why MODNet over BiRefNet:
+// - BiRefNet is higher-quality but its full ONNX is 973 MB (fp32) / 490 MB
+//   (fp16) with no quantized variants. fp32 exceeds onnxruntime-web's
+//   practical WASM heap; fp16 is poorly supported on WASM; and the
+//   generated WebGPU shaders blow past Chrome/D3D12's per-stage storage
+//   buffer limit (8 < 17 needed). In practice that produced garbage masks
+//   and ~488 MB output PNGs.
+// - MODNet ships q4 (23 MB) and q4f16 (12 MB) quantized variants that run
+//   reliably on both WASM and WebGPU. Quality on humans/pets/products is
+//   excellent for a free in-browser model. Apache-2.0 has no commercial
+//   caveat (same intent as picking BiRefNet for MIT).
 
 import {
   AutoModel,
@@ -46,39 +49,21 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 
-const MODEL_ID = "onnx-community/BiRefNet-ONNX";
+const MODEL_ID = "Xenova/modnet";
 
 type Loaded = { model: PreTrainedModel; processor: Processor };
 let loadPromise: Promise<Loaded> | undefined;
 
-// BiRefNet's Concat op binds 17 storage buffers per compute stage, and the
-// generated WGSL Concat shader exceeds 127 levels of else-if nesting. Both
-// limits are commonly hit on Windows/D3D12 adapters where
-// `maxStorageBuffersPerShaderStage` defaults to 8. When that happens, the
-// async validation errors don't reject inference — transformers.js returns
-// garbage tensors and the resulting mask balloons the output PNG into
-// hundreds of megabytes. Detecting this up-front lets us skip WebGPU
-// cleanly and use the slower-but-correct WASM backend instead.
-const BIREFNET_MIN_STORAGE_BUFFERS = 17;
-
-async function isWebGpuViable(): Promise<boolean> {
+async function hasWebGpu(): Promise<boolean> {
   const gpu = (
     globalThis as unknown as {
-      navigator?: {
-        gpu?: {
-          requestAdapter: () => Promise<{
-            limits: { maxStorageBuffersPerShaderStage?: number };
-          } | null>;
-        };
-      };
+      navigator?: { gpu?: { requestAdapter: () => Promise<unknown> } };
     }
   ).navigator?.gpu;
   if (!gpu) return false;
   try {
     const adapter = await gpu.requestAdapter();
-    if (!adapter) return false;
-    const limit = adapter.limits.maxStorageBuffersPerShaderStage ?? 0;
-    return limit >= BIREFNET_MIN_STORAGE_BUFFERS;
+    return !!adapter;
   } catch {
     return false;
   }
@@ -86,7 +71,7 @@ async function isWebGpuViable(): Promise<boolean> {
 
 async function tryLoad(
   device: "webgpu" | "wasm",
-  dtype: "fp16" | "fp32",
+  dtype: "fp32" | "q4f16",
   onProgress?: (info: ProgressInfo) => void,
 ): Promise<Loaded> {
   const model = (await AutoModel.from_pretrained(MODEL_ID, {
@@ -104,14 +89,14 @@ function getModel(
   onProgress?: (info: ProgressInfo) => void,
 ): Promise<Loaded> {
   if (loadPromise) return loadPromise;
-  // WebGPU + fp16 ≈ 110 MB and runs an order of magnitude faster than
-  // WASM. If WebGPU isn't viable for BiRefNet on this device, or if it
-  // fails to load, we fall back to WASM + fp32 (~220 MB) which is
-  // universal but slower. Quality is effectively identical.
+  // MODNet is small enough that fp32 (~26 MB) downloads as fast as the
+  // quantized variants and is the dtype the upstream model card tests
+  // against. WebGPU + q4f16 (~12 MB) is faster on capable devices; fall
+  // back to WASM + fp32 everywhere else.
   const attempt = (async () => {
-    if (await isWebGpuViable()) {
+    if (await hasWebGpu()) {
       try {
-        return await tryLoad("webgpu", "fp16", onProgress);
+        return await tryLoad("webgpu", "q4f16", onProgress);
       } catch {
         // fall through to WASM
       }
@@ -182,8 +167,8 @@ function makeProgressHandler(id: number) {
 }
 
 // Composite a single-channel mask onto the original RGB(A) image and
-// encode as PNG with proper alpha. BiRefNet only outputs the mask — we
-// have to combine it with the source pixels ourselves.
+// encode as PNG with proper alpha. MODNet only outputs the alpha matte —
+// we have to combine it with the source pixels ourselves.
 async function applyMask(
   source: RawImage,
   mask: RawImage,
@@ -234,13 +219,14 @@ ctx.onmessage = async (ev: MessageEvent<InMsg>) => {
       // fire on a true cold start.
       const { model, processor } = await getModel(makeProgressHandler(msg.id));
       const source = await RawImage.fromBlob(msg.blob);
-      // Processor handles the BiRefNet-specific resize + normalization.
+      // Processor resizes/normalizes for MODNet's fixed input.
       const inputs = (await processor(source)) as { pixel_values: unknown };
-      const out = (await model({ input_image: inputs.pixel_values })) as {
-        output_image: { sigmoid: () => { mul: (n: number) => { to: (t: string) => unknown } } }[];
+      const out = (await model({ input: inputs.pixel_values })) as {
+        output: { mul: (n: number) => { to: (t: string) => unknown } }[];
       };
-      const tensor = out.output_image[0]?.sigmoid().mul(255).to("uint8");
-      if (!tensor) throw new Error("BiRefNet returned no output tensor");
+      // MODNet's `output` is already a sigmoid-activated alpha matte in [0,1].
+      const tensor = out.output[0]?.mul(255).to("uint8");
+      if (!tensor) throw new Error("MODNet returned no output tensor");
       const mask = await RawImage.fromTensor(
         tensor as unknown as Parameters<typeof RawImage.fromTensor>[0],
       ).resize(source.width, source.height);
