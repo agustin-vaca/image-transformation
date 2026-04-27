@@ -116,10 +116,9 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 
 ### 4.2 Retention enforcement
 
-- Server stamps `expiresAt = createdAt + 30m` and returns it in the `ImageDTO`.
-- TTL is the **only** thing that deletes. `GET` requests — from users, friends, or unfurlers — never trigger deletion.
-- A scheduled cleanup (Vercel Cron — see §8) **and** a lazy-on-read check both remove any object past `expiresAt` from storage.
-- After expiry, `GET /api/images/:id`, `/i/:id`, and `/api/images/:id/download` all return a friendly `EXPIRED` (gone) state.
+- Server stamps `expiresAt = createdAt + 24h` and returns it in the `ImageDTO`.
+- The **scheduled cleanup** (Vercel Cron, see §8) is what physically deletes objects from storage. `GET` requests never trigger deletion.
+- A **lazy-on-read** check on every `GET /api/images/:id`, `/i/:id`, and `/api/images/:id/download` short-circuits to `EXPIRED`/404 when an object is past TTL — so users never see a stale image even if cron is delayed.
 - Error states are explicit (toast + inline), never silent.
 
 ---
