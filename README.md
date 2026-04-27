@@ -11,7 +11,8 @@
 ✅ **Core flow shipped.** Upload → background removal → horizontal flip → R2 upload → unique share link → download → delete → 24h TTL. Live on Vercel; tests green.
 
 - 📄 [Product Requirements Document](docs/PRD.md)
-- 📋 [Issue backlog](docs/issues/todo/) · [done](docs/issues/done/)
+- 🏗️ [Architecture overview & diagrams](docs/ARCHITECTURE.md)
+- 📋 [Issue history](docs/issues/done/)
 - 🤖 [Copilot / agent instructions](.github/copilot-instructions.md)
 
 ## Stack (decided)
@@ -21,7 +22,7 @@
 - **Background removal:** [`@imgly/background-removal-node`](https://github.com/imgly/background-removal-js) (local, $0)
 - **Image processing:** [`sharp`](https://sharp.pixelplumbing.com/) (`.flop()` for horizontal flip)
 - **Storage:** Cloudflare R2 (S3-compatible, zero egress)
-- **Metadata:** SQLite via `better-sqlite3`
+- **Metadata:** none — R2's `LastModified` is the source of truth for `expiresAt`
 - **Cleanup:** Vercel Cron (daily, Hobby tier cap) + lazy-on-read
 - **Deploy:** Vercel
 
@@ -48,7 +49,7 @@ This project follows the agentic workflow described in [.github/copilot-instruct
 1. **Grill Me** → PRD with explicit out-of-scope.
 2. **Kanban issues** with `blocked_by` chains; vertical (tracer-bullet) slices.
 3. **Ralph loop** — agents pick up unblocked issues, work TDD, run `tsc --noEmit` + lint + tests every iteration.
-4. **Manual QA** + deep modules (Ousterhout) for architectural integrity.
+4. **Manual QA** + small public interfaces hiding the integration details (see [Architecture](docs/ARCHITECTURE.md)).
 
 ## Getting started
 

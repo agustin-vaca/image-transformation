@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
-import { ACCEPTED_MIME_TYPES } from "@/lib/api";
+import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
 
 type Status =
   | { kind: "idle" }
@@ -13,7 +13,6 @@ type Status =
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
-const MAX_BYTES = 10 * 1024 * 1024;
 
 // Rotating one-liners shown while the server does bg-removal + flip.
 // Order is shuffled per-mount so reloads don't always start with the same line.
@@ -95,7 +94,7 @@ export function Uploader() {
         setStatus({ kind: "error", message: "Use a PNG, JPEG, or WebP file." });
         return;
       }
-      if (file.size > MAX_BYTES) {
+      if (file.size > MAX_UPLOAD_BYTES) {
         setStatus({ kind: "error", message: "File exceeds 10 MB limit." });
         return;
       }
