@@ -14,6 +14,7 @@ import {
   removeBackgroundInWorker,
   warmupModel,
 } from "@/lib/bg-removal-client";
+import { createSmoothProgress, PhaseEtaTracker } from "@/lib/smooth-progress";
 import { CameraModal } from "@/components/CameraModal";
 
 type Status =
@@ -106,6 +107,14 @@ async function requestSignedUpload(
   return json.data;
 }
 
+// Module-level so the second upload's ETAs come from the first upload's
+// measured wall-clock times instead of these defaults.
+const phaseEta = new PhaseEtaTracker({
+  model: 4000, // model + WASM download (cold network)
+  bgRemove: 4500, // imgly inference on a midrange laptop, no progress events
+  upload: 1500, // 0.5–1 MB PNG to R2 over typical home broadband
+});
+
 export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -160,38 +169,38 @@ export function Uploader() {
       // event handler (not in an effect) to avoid a cascading render.
       setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
 
-      // Three pipeline stages each emit real progress (model load, bg-removal,
-      // upload). We surface a single weighted bar so the user sees one number
-      // climb monotonically from 0 to 100 across the whole flow. Weights are
-      // chosen so the bar's speed roughly matches each stage's typical share
-      // of total wall-clock time. If the model is already warm by upload-start
-      // (because intent-preload finished while the user was picking a file),
-      // we redistribute its budget into the remaining stages so the bar still
-      // covers 0→100 instead of jumping from 0 to 15% on first paint.
+      // Three pipeline stages each have very different progress fidelity:
+      //   - model load   : real progress events from imgly (asset downloads).
+      //   - bg-removal   : ZERO events on warm runs (model + WASM cached); the
+      //                    work is sync inside the worker and just takes time.
+      //   - upload to R2 : real progress from XHR (often <1s, snaps to 100%).
+      // To make the bar feel gradual instead of jumpy, we drive it with an
+      // EMA-tuned time-based estimator that eases toward each phase's upper
+      // bound. Real progress events bump the value up if the estimator is
+      // lagging behind reality; the bar is monotonic and never moves down.
       const modelAlreadyWarm = getPreloadProgress() >= 100;
-      const W_MODEL = modelAlreadyWarm ? 0 : 0.15;
-      const W_BG = modelAlreadyWarm ? 0.6 : 0.5;
-      const W_UPLOAD = modelAlreadyWarm ? 0.4 : 0.35;
-      // Clamp + monotonic guard — some stages can momentarily report a stale
-      // lower value (e.g. preload progress arriving after warmup() resolved);
-      // never let the visible bar move backwards.
-      let lastShown = 0;
-      const setProgress = (raw: number) => {
-        const clamped = Math.max(lastShown, Math.min(100, Math.round(raw)));
-        lastShown = clamped;
-        setStatus({ kind: "processing", progress: clamped });
-      };
+      const W_MODEL = modelAlreadyWarm ? 0 : 15;
+      const W_BG = modelAlreadyWarm ? 60 : 50;
+      const W_UPLOAD = modelAlreadyWarm ? 40 : 35;
+      const cap = (n: number) => Math.max(0, Math.min(100, n));
+      const smooth = createSmoothProgress((pct) =>
+        setStatus({ kind: "processing", progress: cap(pct) }),
+      );
 
       try {
-        // Phase 1: model + WASM. Worker-hosted so the main thread stays free
-        // to animate the spinner and rotate the messages.
-        setProgress(getPreloadProgress() * W_MODEL);
-        await warmupModel((pct) => setProgress(pct * W_MODEL));
-        setProgress(W_MODEL * 100);
+        // Phase 1: model + WASM (worker-hosted; main thread stays free).
+        if (W_MODEL > 0) {
+          smooth.startPhase(0, W_MODEL, phaseEta.get("model"));
+          await warmupModel((pct) => smooth.reportPhaseProgress(pct / 100));
+          smooth.endPhase();
+          phaseEta.observe("model", performance.now() - tStart);
+        }
         const tModelReady = performance.now();
 
         // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
-        // then ship the encoded PNG into the worker for bg-removal.
+        // then ship the encoded PNG into the worker for bg-removal. The eased
+        // estimator covers the silent inference time on warm runs.
+        smooth.startPhase(W_MODEL, W_MODEL + W_BG, phaseEta.get("bgRemove"));
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         const flippedBlob = await new Promise<Blob>((resolve, reject) => {
           canvas.toBlob(
@@ -200,23 +209,31 @@ export function Uploader() {
           );
         });
         const transparent = await removeBackgroundInWorker(flippedBlob, (pct) =>
-          setProgress(W_MODEL * 100 + pct * W_BG),
+          smooth.reportPhaseProgress(pct / 100),
         );
-        setProgress((W_MODEL + W_BG) * 100);
+        smooth.endPhase();
         const tBgDone = performance.now();
+        phaseEta.observe("bgRemove", tBgDone - tModelReady);
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
         // bytes directly to R2.
+        smooth.startPhase(
+          W_MODEL + W_BG,
+          W_MODEL + W_BG + W_UPLOAD,
+          phaseEta.get("upload"),
+        );
         const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
         const signed = await requestSignedUpload(baseName, transparent.size);
         await uploadToR2WithProgress(
           signed.upload.url,
           signed.upload.headers,
           transparent,
-          (pct) => setProgress((W_MODEL + W_BG) * 100 + pct * W_UPLOAD),
+          (pct) => smooth.reportPhaseProgress(pct / 100),
         );
-        setProgress(100);
+        smooth.endPhase();
+        smooth.stop();
         const tUploadDone = performance.now();
+        phaseEta.observe("upload", tUploadDone - tBgDone);
 
         // Debug/diagnostic only — a single `[perf-client]` log line per upload
         // so we can eyeball model-load vs bg-removal vs upload time in DevTools.
@@ -232,6 +249,7 @@ export function Uploader() {
 
         router.push(signed.image.shareUrl);
       } catch (err) {
+        smooth.stop();
         setStatus({
           kind: "error",
           message: err instanceof Error ? err.message : "Upload failed",
