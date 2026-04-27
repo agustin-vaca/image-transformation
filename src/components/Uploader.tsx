@@ -169,38 +169,32 @@ export function Uploader() {
       // event handler (not in an effect) to avoid a cascading render.
       setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
 
-      // Three pipeline stages each have very different progress fidelity:
-      //   - model load   : real progress events from imgly (asset downloads).
-      //   - bg-removal   : ZERO events on warm runs (model + WASM cached); the
-      //                    work is sync inside the worker and just takes time.
-      //   - upload to R2 : real progress from XHR (often <1s, snaps to 100%).
-      // To make the bar feel gradual instead of jumpy, we drive it with an
-      // EMA-tuned time-based estimator that eases toward each phase's upper
-      // bound. Real progress events bump the value up if the estimator is
-      // lagging behind reality; the bar is monotonic and never moves down.
+      // Drive the bar from a single time-based estimator. Real progress
+      // events from the underlying phases are intentionally NOT used for
+      // display — they only feed `phaseEta` so the next upload's ETA is
+      // more accurate. Mixing them in is what produced the "stuck at 60%
+      // then sprint to 100" feel; one continuous linear climb feels more
+      // natural even if the timing is approximate.
       const modelAlreadyWarm = getPreloadProgress() >= 100;
-      const W_MODEL = modelAlreadyWarm ? 0 : 15;
-      const W_BG = modelAlreadyWarm ? 60 : 50;
-      const W_UPLOAD = modelAlreadyWarm ? 40 : 35;
-      const cap = (n: number) => Math.max(0, Math.min(100, n));
+      const totalEta =
+        (modelAlreadyWarm ? 0 : phaseEta.get("model")) +
+        phaseEta.get("bgRemove") +
+        phaseEta.get("upload");
       const smooth = createSmoothProgress((pct) =>
-        setStatus({ kind: "processing", progress: cap(pct) }),
+        setStatus({ kind: "processing", progress: pct }),
       );
+      smooth.start(totalEta);
 
       try {
         // Phase 1: model + WASM (worker-hosted; main thread stays free).
-        if (W_MODEL > 0) {
-          smooth.startPhase(0, W_MODEL, phaseEta.get("model"));
-          await warmupModel((pct) => smooth.reportPhaseProgress(pct / 100));
-          smooth.endPhase();
-          phaseEta.observe("model", performance.now() - tStart);
-        }
+        await warmupModel();
         const tModelReady = performance.now();
+        if (!modelAlreadyWarm) {
+          phaseEta.observe("model", tModelReady - tStart);
+        }
 
         // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
-        // then ship the encoded PNG into the worker for bg-removal. The eased
-        // estimator covers the silent inference time on warm runs.
-        smooth.startPhase(W_MODEL, W_MODEL + W_BG, phaseEta.get("bgRemove"));
+        // then ship the encoded PNG into the worker for bg-removal.
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         const flippedBlob = await new Promise<Blob>((resolve, reject) => {
           canvas.toBlob(
@@ -208,30 +202,23 @@ export function Uploader() {
             "image/png",
           );
         });
-        const transparent = await removeBackgroundInWorker(flippedBlob, (pct) =>
-          smooth.reportPhaseProgress(pct / 100),
-        );
-        smooth.endPhase();
+        const transparent = await removeBackgroundInWorker(flippedBlob);
         const tBgDone = performance.now();
         phaseEta.observe("bgRemove", tBgDone - tModelReady);
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
         // bytes directly to R2.
-        smooth.startPhase(
-          W_MODEL + W_BG,
-          W_MODEL + W_BG + W_UPLOAD,
-          phaseEta.get("upload"),
-        );
         const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
         const signed = await requestSignedUpload(baseName, transparent.size);
         await uploadToR2WithProgress(
           signed.upload.url,
           signed.upload.headers,
           transparent,
-          (pct) => smooth.reportPhaseProgress(pct / 100),
+          () => {
+            /* upload progress events ignored for display — see comment above */
+          },
         );
-        smooth.endPhase();
-        smooth.stop();
+        smooth.complete();
         const tUploadDone = performance.now();
         phaseEta.observe("upload", tUploadDone - tBgDone);
 
