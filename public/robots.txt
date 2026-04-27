@@ -1,0 +1,6 @@
+User-agent: *
+# Share links (`/i/[id]`) auto-delete 24 hours after upload, so we don't
+# want them in search engines — indexed URLs would just become broken links.
+Disallow: /i/
+# API routes are not user-facing pages.
+Disallow: /api/

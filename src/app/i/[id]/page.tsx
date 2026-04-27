@@ -30,6 +30,9 @@ export async function generateMetadata({
   return {
     title,
     description,
+    // Share links auto-delete after 24 hours, so keep them out of search
+    // engines — indexed URLs would just become broken links.
+    robots: { index: false, follow: false },
     openGraph: {
       type: "website",
       title,
