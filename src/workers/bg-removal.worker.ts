@@ -69,17 +69,39 @@ async function tryLoad(
 function getModel(
   onProgress?: (info: ProgressInfo) => void,
 ): Promise<Loaded> {
-  loadPromise ??= (async () => {
-    // WebGPU + fp16 ≈ 110 MB and runs an order of magnitude faster than
-    // WASM. If WebGPU isn't available (Safari, older Chrome on Linux,
-    // strict enterprise policies) we fall back to WASM + fp32 (~220 MB)
-    // which is universal but slower. Quality is effectively identical.
+  if (loadPromise) return loadPromise;
+  // WebGPU + fp16 ≈ 110 MB and runs an order of magnitude faster than
+  // WASM. If WebGPU isn't available (Safari, older Chrome on Linux,
+  // strict enterprise policies) we fall back to WASM + fp32 (~220 MB)
+  // which is universal but slower. Quality is effectively identical.
+  const attempt = (async () => {
     try {
       return await tryLoad("webgpu", "fp16", onProgress);
-    } catch {
-      return await tryLoad("wasm", "fp32", onProgress);
+    } catch (webgpuError) {
+      try {
+        return await tryLoad("wasm", "fp32", onProgress);
+      } catch (wasmError) {
+        // Surface both root causes so the client error toast / telemetry
+        // isn't just "wasm failed". The WebGPU error is the original
+        // failure that triggered the fallback in the first place.
+        const webgpuMessage =
+          webgpuError instanceof Error ? webgpuError.message : String(webgpuError);
+        const wasmMessage =
+          wasmError instanceof Error ? wasmError.message : String(wasmError);
+        throw new Error(
+          `Failed to load background-removal model. WebGPU: ${webgpuMessage}. WASM: ${wasmMessage}`,
+        );
+      }
     }
   })();
+  // Only cache the success. If both backends fail (e.g. transient network
+  // error fetching weights from the HF CDN) clear the cached promise so
+  // the next preload/remove attempt can retry instead of forever replaying
+  // a rejected promise.
+  loadPromise = attempt.catch((err) => {
+    loadPromise = undefined;
+    throw err;
+  });
   return loadPromise;
 }
 
