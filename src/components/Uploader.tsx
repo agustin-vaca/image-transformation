@@ -2,21 +2,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ApiResponse, ImageDTO } from "@/lib/api";
-import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
+import type { ApiResponse, SignedUploadDTO } from "@/lib/api";
+import {
+  ACCEPTED_MIME_TYPES,
+  CLIENT_MAX_EDGE_PX,
+  MAX_UPLOAD_BYTES,
+  UPLOAD_MIME_TYPE,
+} from "@/lib/api";
 
 type Status =
   | { kind: "idle" }
-  | { kind: "loadingModel"; progress: number } // 0..100, sum of asset downloads
-  | { kind: "removingBackground" } // model running, no progress events
-  | { kind: "uploading"; progress: number } // 0..100, real bytes from XHR
-  | { kind: "processing" } // upload done; server flips + R2 puts
+  | { kind: "loadingModel"; progress: number }
+  | { kind: "removingBackground" }
+  | { kind: "uploading"; progress: number }
+  | { kind: "processing" }
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 
-// Rotating one-liners shown while the local model crunches the image.
 const PROCESSING_MESSAGES: ReadonlyArray<string> = [
   "Removing background\u2026",
   "Teaching pixels to face the other way\u2026",
@@ -32,7 +36,7 @@ const PROCESSING_MESSAGES: ReadonlyArray<string> = [
 const MESSAGE_ROTATION_MS = 2500;
 
 // Lazy-cached imgly module + asset preload promise. The module is ~200KB JS
-// plus ~40MB of WASM/ONNX weights, so we only load when the user shows
+// plus tens of MB of WASM/ONNX weights, so we only load when the user shows
 // intent (hover, focus, drag-enter, or first file pick).
 type ImglyModule = typeof import("@imgly/background-removal");
 let imglyPromise: Promise<ImglyModule> | undefined;
@@ -43,12 +47,9 @@ function loadImgly(): Promise<ImglyModule> {
   return imglyPromise;
 }
 
-/** Kick off the model + WASM download in the background. Idempotent. */
 function warmupModel(onProgress?: (pct: number) => void): Promise<void> {
   preloadPromise ??= (async () => {
     const mod = await loadImgly();
-    // The library reports many keys (wasm, onnx, configs). Aggregate them
-    // into a single 0..100% so the UI can show one bar.
     const totals = new Map<string, { current: number; total: number }>();
     await mod.preload({
       model: "isnet_quint8",
@@ -68,33 +69,74 @@ function warmupModel(onProgress?: (pct: number) => void): Promise<void> {
   return preloadPromise;
 }
 
-function uploadWithProgress(
-  blob: Blob,
-  filename: string,
+/**
+ * Decode the input file, downscale so its longest edge is at most
+ * `CLIENT_MAX_EDGE_PX`, and apply a horizontal flip in the same pass.
+ * Returns a backing canvas the bg-removal pass can consume directly. Also
+ * returns the original decoded dimensions for logging.
+ */
+async function decodeFlipDownscale(
+  file: File,
+): Promise<{ canvas: HTMLCanvasElement; originalW: number; originalH: number }> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const { width: w0, height: h0 } = bitmap;
+    const longest = Math.max(w0, h0);
+    const scale = longest > CLIENT_MAX_EDGE_PX ? CLIENT_MAX_EDGE_PX / longest : 1;
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not get 2D context");
+    // Horizontal flip is a one-line transform; do it here so the server
+    // never has to touch the bytes.
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return { canvas, originalW: w0, originalH: h0 };
+  } finally {
+    bitmap.close();
+  }
+}
+
+function uploadToR2WithProgress(
+  url: string,
+  headers: Record<string, string>,
+  body: Blob,
   onProgress: (pct: number) => void,
   onUploaded: () => void,
-): Promise<ApiResponse<ImageDTO>> {
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/images");
-    xhr.responseType = "json";
+    xhr.open("PUT", url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.upload.onload = () => onUploaded();
-    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.onerror = () => reject(new Error("Network error during upload"));
     xhr.onload = () => {
-      const body = xhr.response as ApiResponse<ImageDTO> | null;
-      if (body && typeof body === "object" && "ok" in body) {
-        resolve(body);
-      } else {
-        reject(new Error(`Unexpected response (status ${xhr.status})`));
-      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload rejected (status ${xhr.status})`));
     };
-    const form = new FormData();
-    form.append("file", blob, filename);
-    xhr.send(form);
+    xhr.send(body);
   });
+}
+
+async function requestSignedUpload(
+  filename: string,
+  bytes: number,
+): Promise<SignedUploadDTO> {
+  const res = await fetch("/api/images", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filename, bytes, mime: UPLOAD_MIME_TYPE }),
+  });
+  const json = (await res.json()) as ApiResponse<SignedUploadDTO>;
+  if (!json.ok) throw new Error(json.error.message);
+  return json.data;
 }
 
 export function Uploader() {
@@ -109,8 +151,6 @@ export function Uploader() {
     status.kind === "uploading" ||
     status.kind === "processing";
 
-  // Rotate the funny messages every MESSAGE_ROTATION_MS while bg-removal is
-  // running.
   useEffect(() => {
     if (status.kind !== "removingBackground" && status.kind !== "processing") {
       return;
@@ -125,8 +165,6 @@ export function Uploader() {
     return () => clearInterval(interval);
   }, [status.kind]);
 
-  // Hint the browser to start fetching imgly + assets the first time the user
-  // shows intent. Failure is silent — the upload path will retry with UI.
   const intentTriggered = useRef(false);
   const onIntent = useCallback(() => {
     if (intentTriggered.current) return;
@@ -143,13 +181,16 @@ export function Uploader() {
         return;
       }
       if (file.size > MAX_UPLOAD_BYTES) {
-        setStatus({ kind: "error", message: "File exceeds 10 MB limit." });
+        setStatus({
+          kind: "error",
+          message: `File exceeds ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB limit.`,
+        });
         return;
       }
 
       const tStart = performance.now();
       try {
-        // Phase 1: ensure model + WASM are loaded.
+        // Phase 1: model + WASM.
         if (!preloadPromise) {
           setStatus({ kind: "loadingModel", progress: 0 });
           await warmupModel((pct) =>
@@ -160,42 +201,42 @@ export function Uploader() {
         }
         const tModelReady = performance.now();
 
-        // Phase 2: run bg-removal locally. The library doesn't emit progress
-        // during inference, so we just show a spinner here.
+        // Phase 2: decode + flip + downscale + bg-removal, all client-side.
+        // Doing the flip + downscale here means the server never touches the
+        // bytes (no Vercel 4.5 MB body limit, no sharp on the lambda).
         setStatus({ kind: "removingBackground" });
+        const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         const mod = await loadImgly();
-        const transparent = await mod.removeBackground(file, {
+        const transparent = await mod.removeBackground(canvas, {
           model: "isnet_quint8",
           output: { format: "image/png" },
         });
         const tBgDone = performance.now();
 
-        // Phase 3: upload the transparent PNG. Server flips + stores.
+        // Phase 3: ask the server for a presigned PUT URL, then upload the
+        // bytes directly to R2.
         setStatus({ kind: "uploading", progress: 0 });
         const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
-        const json = await uploadWithProgress(
+        const signed = await requestSignedUpload(baseName, transparent.size);
+        await uploadToR2WithProgress(
+          signed.upload.url,
+          signed.upload.headers,
           transparent,
-          baseName,
           (pct) => setStatus({ kind: "uploading", progress: pct }),
           () => setStatus({ kind: "processing" }),
         );
         const tUploadDone = performance.now();
 
-        // Mirror the server's [perf] line so we have client-side numbers in
-        // DevTools alongside the Vercel server logs.
         console.info(
           `[perf-client] upload modelLoad=${Math.round(tModelReady - tStart)}ms ` +
-            `bgRemove=${Math.round(tBgDone - tModelReady)}ms ` +
-            `upload+server=${Math.round(tUploadDone - tBgDone)}ms ` +
+            `bgRemove+flip=${Math.round(tBgDone - tModelReady)}ms ` +
+            `sign+upload=${Math.round(tUploadDone - tBgDone)}ms ` +
             `total=${Math.round(tUploadDone - tStart)}ms ` +
-            `inBytes=${file.size} outBytes=${transparent.size}`,
+            `originalSize=${file.size} originalDims=${originalW}x${originalH} ` +
+            `outBytes=${transparent.size} outDims=${canvas.width}x${canvas.height}`,
         );
 
-        if (!json.ok) {
-          setStatus({ kind: "error", message: json.error.message });
-          return;
-        }
-        router.push(`/i/${json.data.id}`);
+        router.push(signed.image.shareUrl);
       } catch (err) {
         setStatus({
           kind: "error",
@@ -228,7 +269,7 @@ export function Uploader() {
         : status.kind === "uploading"
           ? `Uploading ${status.progress}%`
           : status.kind === "processing"
-            ? "Flipping & saving\u2026"
+            ? "Saving\u2026"
             : "";
 
   return (
@@ -310,7 +351,6 @@ export function Uploader() {
         )}
       </label>
 
-      {/* Polite live region so screen readers announce phase changes. */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {statusText}
       </div>
