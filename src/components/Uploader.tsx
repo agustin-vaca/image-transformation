@@ -9,6 +9,11 @@ import {
   MAX_UPLOAD_BYTES,
   UPLOAD_MIME_TYPE,
 } from "@/lib/api";
+import {
+  getPreloadProgress,
+  removeBackgroundInWorker,
+  warmupModel,
+} from "@/lib/bg-removal-client";
 
 type Status =
   | { kind: "idle" }
@@ -33,70 +38,6 @@ const PROCESSING_MESSAGES: ReadonlyArray<string> = [
   "Almost there. Probably.\u2026",
 ];
 const MESSAGE_ROTATION_MS = 2500;
-
-// Lazy-cached imgly module + asset preload promise. The module is ~200KB JS
-// plus tens of MB of WASM/ONNX weights, so we only load when the user shows
-// intent (hover, focus, drag-enter, or first file pick).
-type ImglyModule = typeof import("@imgly/background-removal");
-let imglyPromise: Promise<ImglyModule> | undefined;
-let preloadPromise: Promise<void> | undefined;
-
-function loadImgly(): Promise<ImglyModule> {
-  imglyPromise ??= import("@imgly/background-removal");
-  return imglyPromise;
-}
-
-// Subscribers receive aggregated 0..100 progress while preload is in flight.
-// Held in module scope so a warmup started by `onIntent` can still notify the
-// upload flow when it later subscribes mid-download.
-let preloadProgress = 0;
-const preloadSubscribers = new Set<(pct: number) => void>();
-
-function warmupModel(onProgress?: (pct: number) => void): Promise<void> {
-  if (onProgress) {
-    // Replay the last value so a late subscriber doesn't sit at 0% if preload
-    // has already made progress.
-    onProgress(preloadProgress);
-    preloadSubscribers.add(onProgress);
-  }
-  preloadPromise ??= (async () => {
-    try {
-      const mod = await loadImgly();
-      const totals = new Map<string, { current: number; total: number }>();
-      let lastPct = -1;
-      await mod.preload({
-        model: "isnet_quint8",
-        progress: (key: string, current: number, total: number) => {
-          totals.set(key, { current, total });
-          let sumC = 0;
-          let sumT = 0;
-          for (const v of totals.values()) {
-            sumC += v.current;
-            sumT += v.total;
-          }
-          if (sumT <= 0) return;
-          const pct = Math.round((sumC / sumT) * 100);
-          // The library fires this very frequently; only notify on integer
-          // changes to avoid a re-render storm during the WASM/ONNX download.
-          if (pct === lastPct) return;
-          lastPct = pct;
-          preloadProgress = pct;
-          for (const cb of preloadSubscribers) cb(pct);
-        },
-      });
-      preloadProgress = 100;
-      for (const cb of preloadSubscribers) cb(100);
-    } catch (err) {
-      // Don't trap subsequent attempts behind a permanently-rejected promise.
-      preloadPromise = undefined;
-      preloadProgress = 0;
-      throw err;
-    } finally {
-      preloadSubscribers.clear();
-    }
-  })();
-  return preloadPromise;
-}
 
 /**
  * Decode the input file, downscale so its longest edge is at most
@@ -166,18 +107,6 @@ async function requestSignedUpload(
   return json.data;
 }
 
-/**
- * Yield to the browser so a pending React commit can paint and CSS
- * animations can start before we begin a long synchronous task (WASM init,
- * canvas decoding, etc.). A double rAF is more reliable than `setTimeout(0)`
- * because it guarantees we wait through one full paint frame.
- */
-function yieldToBrowser(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-}
-
 export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -233,39 +162,25 @@ export function Uploader() {
       // event handler (not in an effect) to avoid a cascading render.
       setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
       try {
-        // Phase 1: model + WASM. Always show loading state while we wait, even
-        // if a silent intent-warmup is already in flight, so the UI never sits
-        // at idle for a multi-second download after file selection.
-        setStatus({ kind: "loadingModel", progress: preloadProgress });
-        // Yield once so React can commit + the browser can paint the spinner
-        // and start its CSS animation BEFORE the WASM init eats the main
-        // thread for hundreds of ms. Without this the spinner appears frozen.
-        await yieldToBrowser();
+        // Phase 1: model + WASM. Worker-hosted so the main thread stays free
+        // to animate the spinner and rotate the messages.
+        setStatus({ kind: "loadingModel", progress: getPreloadProgress() });
         await warmupModel((pct) =>
           setStatus({ kind: "loadingModel", progress: pct }),
         );
         const tModelReady = performance.now();
 
-        // Phase 2: decode + flip + downscale + bg-removal, all client-side.
-        // Doing the flip + downscale here means the server never touches the
-        // bytes (no Vercel 4.5 MB body limit, no sharp on the lambda).
+        // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
+        // then ship the encoded PNG into the worker for bg-removal.
         setStatus({ kind: "removingBackground" });
-        await yieldToBrowser();
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
-        // imgly's removeBackground accepts Blob/ImageData/ArrayBuffer/Uint8Array/string
-        // — passing the canvas directly throws "undefined is not iterable" inside the
-        // library, so encode the flipped+downscaled canvas to a PNG Blob first.
         const flippedBlob = await new Promise<Blob>((resolve, reject) => {
           canvas.toBlob(
             (b) => (b ? resolve(b) : reject(new Error("Canvas encode failed"))),
             "image/png",
           );
         });
-        const mod = await loadImgly();
-        const transparent = await mod.removeBackground(flippedBlob, {
-          model: "isnet_quint8",
-          output: { format: "image/png" },
-        });
+        const transparent = await removeBackgroundInWorker(flippedBlob);
         const tBgDone = performance.now();
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
