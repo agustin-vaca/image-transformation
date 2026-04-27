@@ -109,36 +109,3 @@ for (const ortRoot of findPnpmInstalls("onnxruntime-node@", "onnxruntime-node"))
 console.log(
   `[prune-vercel] removed ${removed} files (${(removedBytes / 1024 / 1024).toFixed(1)} MB)`,
 );
-const KEEP_PLATFORM = "linux";
-const KEEP_ARCH = "x64";
-const ORT_DROP_LIBS = new Set([
-  "libonnxruntime_providers_cuda.so",
-  "libonnxruntime_providers_tensorrt.so",
-]);
-for (const ortRoot of findPnpmInstalls("onnxruntime-node@", "onnxruntime-node")) {
-  const napiDir = path.join(ortRoot, "bin/napi-v3");
-  if (!fs.existsSync(napiDir)) continue;
-  for (const platform of fs.readdirSync(napiDir)) {
-    const platformDir = path.join(napiDir, platform);
-    if (platform !== KEEP_PLATFORM) {
-      rmrf(platformDir);
-      continue;
-    }
-    for (const arch of fs.readdirSync(platformDir)) {
-      const archDir = path.join(platformDir, arch);
-      if (arch !== KEEP_ARCH) {
-        rmrf(archDir);
-        continue;
-      }
-      for (const lib of fs.readdirSync(archDir)) {
-        if (ORT_DROP_LIBS.has(lib)) {
-          rmrf(path.join(archDir, lib));
-        }
-      }
-    }
-  }
-}
-
-console.log(
-  `[prune-vercel] removed ${removed} files (${(removedBytes / 1024 / 1024).toFixed(1)} MB)`,
-);
