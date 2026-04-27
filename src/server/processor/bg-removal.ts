@@ -1,51 +1,22 @@
 import { removeBackground } from "@imgly/background-removal-node";
-import { createRequire } from "node:module";
-import fs from "node:fs";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ApiError, ErrorCodes } from "@/server/errors";
 
-// Resolve the bundled model assets at runtime so we never hit the network.
-// Vercel's NFT tracer needs the dist/ folder explicitly listed in
-// `outputFileTracingIncludes` (see next.config.ts) — once that's in place,
-// `require.resolve` returns the path inside the deployed lambda.
-//
-// Two evasions vs Turbopack's static analysis:
-//   1. The package name is built at runtime so the bundler can't rewrite the
-//      `require.resolve(...)` call into a numeric module ID.
-//   2. Resolution happens lazily inside `remove()`, not at module-load —
-//      otherwise Next.js's "Collecting page data" phase fails the build.
-const lazyRequire = createRequire(import.meta.url);
-let cachedPublicPath: string | undefined;
-function getImglyPublicPath(): string {
-  if (cachedPublicPath !== undefined) return cachedPublicPath;
-  const pkgName = ["@imgly", "background-removal-node"].join("/");
-  const distDir = path.dirname(lazyRequire.resolve(pkgName));
-  // One-shot diagnostic: log whether the bundled model chunks actually made
-  // it into the lambda. NFT tracing of extension-less files has a history of
-  // silently dropping them, and the resulting error is otherwise opaque.
-  let chunkCount = 0;
-  let dirExists = false;
-  try {
-    const entries = fs.readdirSync(distDir);
-    dirExists = true;
-    chunkCount = entries.filter((f) => path.extname(f) === "").length;
-  } catch {
-    // dirExists stays false
-  }
-  console.log(
-    `[imgly] distDir=${distDir} exists=${dirExists} chunks=${chunkCount}`,
-  );
-  cachedPublicPath = pathToFileURL(distDir + path.sep).href;
-  return cachedPublicPath;
-}
+// Weights are fetched from IMG.LY's CDN on first call rather than bundled.
+// We previously tried bundling them via `outputFileTracingIncludes` so the
+// model would be on local disk, but Vercel's Turbopack rewrites
+// `import.meta.url` in server bundles, which breaks `createRequire` —
+// `require.resolve("@imgly/background-removal-node")` throws at runtime no
+// matter what's in the deployment. The CDN fetch costs ~5s on cold starts;
+// the small model variant (below) is the bigger speedup anyway.
+const IMGLY_CDN_PUBLIC_PATH =
+  "https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/";
 
 export class BackgroundRemover {
   async remove(buf: Buffer, mime: string = "image/png"): Promise<Buffer> {
     try {
       const blob = new Blob([new Uint8Array(buf)], { type: mime });
       const out = await removeBackground(blob, {
-        publicPath: getImglyPublicPath(),
+        publicPath: IMGLY_CDN_PUBLIC_PATH,
         // The "small" variant (~42 MB) is plenty for a flip+share preview and
         // runs noticeably faster than the default ("medium").
         model: "small",

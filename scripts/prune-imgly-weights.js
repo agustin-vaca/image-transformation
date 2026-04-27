@@ -9,10 +9,13 @@
  * We always run on CPU, so those are pure dead weight. We also drop the
  * darwin/win32/linux-arm64 binaries since iad1 is linux/x64.
  *
- * NOTE: The @imgly/background-removal-node model weights (~127 MB of
- * extension-less hash files in dist/) are intentionally KEPT so the lambda
- * can serve them locally instead of fetching from IMG.LY's CDN on every
- * cold start. `next.config.ts` `outputFileTracingIncludes` pulls them in.
+ * We ALSO drop the @imgly/background-removal-node model weights (~127 MB
+ * of extension-less hash-named files in dist/). They're fetched from
+ * IMG.LY's CDN at runtime via `publicPath` instead. We attempted bundling
+ * them via `outputFileTracingIncludes`, but Turbopack rewrites
+ * `import.meta.url` in server bundles, so `createRequire().resolve()`
+ * throws at runtime no matter what's traced — leaving the weights as dead
+ * weight in the deployed lambda.
  *
  * Runs only on Vercel (or when FORCE_PRUNE_IMGLY=1) so local dev is
  * unaffected.
@@ -55,7 +58,57 @@ function findPnpmInstalls(packagePrefix, packageName) {
   return out;
 }
 
+// --- Strip imgly model weights (extension-less hash files in dist/) ---------
+const imglyDistDirs = [
+  ...findPnpmInstalls(
+    "@imgly+background-removal-node@",
+    "@imgly/background-removal-node",
+  ).map((p) => path.join(p, "dist")),
+  path.join(process.cwd(), "node_modules/@imgly/background-removal-node/dist"),
+];
+for (const dir of imglyDistDirs) {
+  if (!fs.existsSync(dir)) continue;
+  for (const file of fs.readdirSync(dir)) {
+    // Keep .cjs/.mjs/.json/.ts/.map; drop hash-named binary chunks.
+    if (path.extname(file) !== "") continue;
+    rmrf(path.join(dir, file));
+  }
+}
+
 // --- Strip onnxruntime-node binaries we don't run on Vercel -----------------
+const KEEP_PLATFORM = "linux";
+const KEEP_ARCH = "x64";
+const ORT_DROP_LIBS = new Set([
+  "libonnxruntime_providers_cuda.so",
+  "libonnxruntime_providers_tensorrt.so",
+]);
+for (const ortRoot of findPnpmInstalls("onnxruntime-node@", "onnxruntime-node")) {
+  const napiDir = path.join(ortRoot, "bin/napi-v3");
+  if (!fs.existsSync(napiDir)) continue;
+  for (const platform of fs.readdirSync(napiDir)) {
+    const platformDir = path.join(napiDir, platform);
+    if (platform !== KEEP_PLATFORM) {
+      rmrf(platformDir);
+      continue;
+    }
+    for (const arch of fs.readdirSync(platformDir)) {
+      const archDir = path.join(platformDir, arch);
+      if (arch !== KEEP_ARCH) {
+        rmrf(archDir);
+        continue;
+      }
+      for (const lib of fs.readdirSync(archDir)) {
+        if (ORT_DROP_LIBS.has(lib)) {
+          rmrf(path.join(archDir, lib));
+        }
+      }
+    }
+  }
+}
+
+console.log(
+  `[prune-vercel] removed ${removed} files (${(removedBytes / 1024 / 1024).toFixed(1)} MB)`,
+);
 const KEEP_PLATFORM = "linux";
 const KEEP_ARCH = "x64";
 const ORT_DROP_LIBS = new Set([
