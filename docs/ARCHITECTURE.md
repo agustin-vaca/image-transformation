@@ -273,18 +273,24 @@ Why each piece of the stack was chosen, what it cost, and what we'd reach for if
 
 ### Background removal — MODNet via `@huggingface/transformers` (browser, WebGPU/WASM)
 
-| Considered | Verdict |
-|---|---|
-| **Browser-side `@huggingface/transformers` + `Xenova/modnet`** ✅ | MODNet is a small, fast portrait-matting model (Apache-2.0, no commercial caveat) with proper quantized ONNX variants (q4f16 ~12 MB, fp32 ~26 MB) that run reliably on **both** WebGPU and WASM. We try WebGPU + q4f16 first; fall back to WASM + fp32 when WebGPU is unavailable. |
-| Tried: `onnx-community/BiRefNet-ONNX` | Higher-quality on hair/fur but only ships fp32 (973 MB) and fp16 (490 MB) — fp32 exceeds onnxruntime-web's WASM heap on real hardware, fp16 is poorly supported on WASM, and the WebGPU shaders blow past Chrome/D3D12's per-stage storage-buffer limit. In practice that produced garbage masks and ~488 MB output PNGs. Reverted. |
-| Previous: BRIA RMBG-1.4 via transformers.js | Cleaner than ISNet but non-commercial license. |
-| Previous: `@imgly/background-removal` (`isnet_fp16`) | Same in-browser model class; softer matte edges on hair/fur/glasses. |
-| Server-side `@imgly/background-removal-node` | Original choice (PR #14). Hit a ~14 s CPU floor on a warm Vercel lambda — model inference is the floor and there's no caching/ORT-tuning that beats it. |
-| remove.bg / Photoroom / Pixian | Better on adversarial cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint. |
+This was the most-iterated decision in the project. The shortlist was filtered, in order, by:
 
-**Cost:** MODNet's ONNX weights are ~12 MB (q4f16, WebGPU path) or ~26 MB (fp32, WASM fallback) plus ~10 MB of WASM/ORT runtime fetched on demand. Weights are downloaded straight from the Hugging Face CDN (`env.allowLocalModels = false`) and cached by the browser, so the cold load is paid once per visitor and is fast even on slow connections. We preload on first user intent (hover, focus, drag-enter) so the download usually finishes before the visitor picks a file, and the smooth-progress headline names "Loading background-removal model" while it does. Inference runs in a Web Worker so the main thread can keep animating. The WebGPU path is several times faster than WASM; old/low-end devices on the WASM fallback typically take ~1–2 s per image.
+1. **License compatible with a commercial-friendly reuse** (rules out BRIA RMBG, AGPL `@imgly`).
+2. **Runs in the visitor's browser with no API key, no quota, no server CPU** (rules out remove.bg / Photoroom / Pixian, and the original server-side `@imgly` lambda).
+3. **Has a quantized ONNX small enough for a one-time browser download** that runs reliably on **both** WebGPU and WASM (rules out BiRefNet).
 
-**Swap path:** edit [`lib/bg-removal-client.ts`](../src/lib/bg-removal-client.ts) and the worker source under [`src/workers/`](../src/workers/). To move bg-removal back to the server, restore the previous server-side processor seam and have `Uploader.tsx` POST the original file instead of the worker output.
+| Considered | License | Weights | Verdict |
+|---|---|---|---|
+| **`@huggingface/transformers` + `Xenova/modnet`** ✅ | **Apache-2.0** | q4f16 ~12 MB (WebGPU) / fp32 ~26 MB (WASM) | Small, fast portrait-matting model with proper quantized ONNX variants that load reliably on **both** backends. Try WebGPU + q4f16 first; fall back to WASM + fp32. Quality is good enough for the single-screen demo and lets us ship without a quota or API key. |
+| Tried: `onnx-community/BiRefNet-ONNX` (a05fe48 ← 8e7d042) | MIT | fp32 973 MB / fp16 490 MB | Higher-quality on hair/fur, **but**: fp32 exceeds onnxruntime-web's WASM heap on real hardware, fp16 is poorly supported on WASM, and the WebGPU shaders blow past Chrome/D3D12's per-stage storage-buffer limit. In practice this produced garbage masks and ~488 MB output PNGs (#18). Reverted. |
+| Tried: BRIA RMBG-1.4 via transformers.js (8e7d042 ← 9c04aab) | **Non-commercial only** | ~176 MB | Cleaner edges than ISNet, but the license disqualified it from anything that could become a real product. |
+| Tried: `@imgly/background-removal` (`isnet_fp16`) in-browser (9c04aab ← 42c2168) | **AGPL-3.0** | ~89 MB | The browser variant of the original server-side library. Worked, but viral copyleft is a hard pass for any reuse beyond this take-home, and matte edges on hair/fur/glasses were softer than the modern alternatives. |
+| Tried: server-side `@imgly/background-removal-node` (PR #14) | AGPL-3.0 | n/a | Original choice. Hit a ~14 s CPU floor on a warm Vercel lambda — model inference *is* the floor and there's no caching/ORT-tuning that beats it. Pushed everything to the browser. |
+| remove.bg / Photoroom / Pixian (hosted APIs) | proprietary | n/a | Better on adversarial cases, but free tiers are 50–100 images/month and require an account + API key. Disqualified by the "no paid usage" constraint and by the desire to keep zero secrets in the deploy. |
+
+**Cost.** MODNet's ONNX weights are ~12 MB (q4f16, WebGPU path) or ~26 MB (fp32, WASM fallback) plus ~10 MB of WASM/ORT runtime fetched on demand. Weights are downloaded straight from the Hugging Face CDN (`env.allowLocalModels = false`) and cached by the browser, so the cold load is paid once per visitor and is fast even on slow connections. We preload on first user intent (hover, focus, drag-enter) so the download usually finishes before the visitor picks a file, and the smooth-progress headline names "Loading background-removal model" while it does. Inference runs in a Web Worker so the main thread can keep animating. The WebGPU path is several times faster than WASM; old/low-end devices on the WASM fallback typically take ~1–2 s per image.
+
+**Swap path.** Edit [`lib/bg-removal-client.ts`](../src/lib/bg-removal-client.ts) and the worker source under [`src/workers/`](../src/workers/) — that's the only seam. The Uploader feeds a `Blob` in and reads a `Blob` out; nothing else in the app is coupled to which model is behind that interface. To move bg-removal back to the server, restore the previous server-side processor seam and have `Uploader.tsx` POST the original file instead of the worker output.
 
 ### Image flip — client-side `<canvas>`
 
