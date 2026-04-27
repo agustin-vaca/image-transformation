@@ -91,7 +91,10 @@ export function warmupModel(
   return preloadPromise;
 }
 
-export function removeBackgroundInWorker(blob: Blob): Promise<Blob> {
+export function removeBackgroundInWorker(
+  blob: Blob,
+  onProgress?: (pct: number) => void,
+): Promise<Blob> {
   const id = nextId++;
   return new Promise<Blob>((resolve, reject) => {
     pending.set(id, {
@@ -100,6 +103,7 @@ export function removeBackgroundInWorker(blob: Blob): Promise<Blob> {
         else resolve(b);
       },
       reject,
+      onProgress,
     });
     getWorker().postMessage({ id, type: "remove", blob });
   });

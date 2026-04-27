@@ -18,9 +18,7 @@ import { CameraModal } from "@/components/CameraModal";
 
 type Status =
   | { kind: "idle" }
-  | { kind: "loadingModel"; progress: number }
-  | { kind: "removingBackground" }
-  | { kind: "uploading"; progress: number }
+  | { kind: "processing"; progress: number }
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
@@ -118,10 +116,7 @@ export function Uploader() {
   );
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const busy =
-    status.kind === "loadingModel" ||
-    status.kind === "removingBackground" ||
-    status.kind === "uploading";
+  const busy = status.kind === "processing";
 
   // Rotate the funny messages for the entire duration of any busy phase
   // (model load, bg removal, upload, save). The list is constant; only the
@@ -164,18 +159,39 @@ export function Uploader() {
       // Seed a fresh random starting message for this upload. Done in the
       // event handler (not in an effect) to avoid a cascading render.
       setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
+
+      // Three pipeline stages each emit real progress (model load, bg-removal,
+      // upload). We surface a single weighted bar so the user sees one number
+      // climb monotonically from 0 to 100 across the whole flow. Weights are
+      // chosen so the bar's speed roughly matches each stage's typical share
+      // of total wall-clock time. If the model is already warm by upload-start
+      // (because intent-preload finished while the user was picking a file),
+      // we redistribute its budget into the remaining stages so the bar still
+      // covers 0→100 instead of jumping from 0 to 15% on first paint.
+      const modelAlreadyWarm = getPreloadProgress() >= 100;
+      const W_MODEL = modelAlreadyWarm ? 0 : 0.15;
+      const W_BG = modelAlreadyWarm ? 0.6 : 0.5;
+      const W_UPLOAD = modelAlreadyWarm ? 0.4 : 0.35;
+      // Clamp + monotonic guard — some stages can momentarily report a stale
+      // lower value (e.g. preload progress arriving after warmup() resolved);
+      // never let the visible bar move backwards.
+      let lastShown = 0;
+      const setProgress = (raw: number) => {
+        const clamped = Math.max(lastShown, Math.min(100, Math.round(raw)));
+        lastShown = clamped;
+        setStatus({ kind: "processing", progress: clamped });
+      };
+
       try {
         // Phase 1: model + WASM. Worker-hosted so the main thread stays free
         // to animate the spinner and rotate the messages.
-        setStatus({ kind: "loadingModel", progress: getPreloadProgress() });
-        await warmupModel((pct) =>
-          setStatus({ kind: "loadingModel", progress: pct }),
-        );
+        setProgress(getPreloadProgress() * W_MODEL);
+        await warmupModel((pct) => setProgress(pct * W_MODEL));
+        setProgress(W_MODEL * 100);
         const tModelReady = performance.now();
 
         // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
         // then ship the encoded PNG into the worker for bg-removal.
-        setStatus({ kind: "removingBackground" });
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         const flippedBlob = await new Promise<Blob>((resolve, reject) => {
           canvas.toBlob(
@@ -183,20 +199,23 @@ export function Uploader() {
             "image/png",
           );
         });
-        const transparent = await removeBackgroundInWorker(flippedBlob);
+        const transparent = await removeBackgroundInWorker(flippedBlob, (pct) =>
+          setProgress(W_MODEL * 100 + pct * W_BG),
+        );
+        setProgress((W_MODEL + W_BG) * 100);
         const tBgDone = performance.now();
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
         // bytes directly to R2.
-        setStatus({ kind: "uploading", progress: 0 });
         const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
         const signed = await requestSignedUpload(baseName, transparent.size);
         await uploadToR2WithProgress(
           signed.upload.url,
           signed.upload.headers,
           transparent,
-          (pct) => setStatus({ kind: "uploading", progress: pct }),
+          (pct) => setProgress((W_MODEL + W_BG) * 100 + pct * W_UPLOAD),
         );
+        setProgress(100);
         const tUploadDone = performance.now();
 
         // Debug/diagnostic only — a single `[perf-client]` log line per upload
@@ -270,16 +289,11 @@ export function Uploader() {
   );
 
   // The headline is always one of the funny rotating messages while busy, so
-  // the first upload (which has to download the model) feels the same as any
-  // subsequent one. Phase-specific detail (percentages) lives below the bar.
+  // every upload feels the same regardless of whether the model needs to
+  // download. The single weighted progress bar (0→100% across model load +
+  // bg-removal + upload) lives below the headline.
   const headline = busy ? PROCESSING_MESSAGES[messageIndex] : "";
-  const subText =
-    status.kind === "loadingModel"
-      ? `Warming up the model\u2026 ${status.progress}%`
-      : status.kind === "uploading"
-        ? `Uploading\u2026 ${status.progress}%`
-        : "";
-  const statusText = subText ? `${headline} \u2014 ${subText}` : headline;
+  const progress = status.kind === "processing" ? status.progress : 0;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -320,29 +334,20 @@ export function Uploader() {
             >
               {headline}
             </span>
-            {(status.kind === "uploading" ||
-              status.kind === "loadingModel") && (
+            <div
+              className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+              aria-label="Processing progress"
+            >
               <div
-                className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={status.progress}
-                aria-label={
-                  status.kind === "loadingModel"
-                    ? "Model load progress"
-                    : "Upload progress"
-                }
-              >
-                <div
-                  className="h-full bg-primary transition-[width] duration-150"
-                  style={{ width: `${status.progress}%` }}
-                />
-              </div>
-            )}
-            {subText && (
-              <span className="text-xs text-on-surface-variant">{subText}</span>
-            )}
+                className="h-full bg-primary transition-[width] duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-xs text-on-surface-variant">{progress}%</span>
           </div>
         ) : (
           <>
@@ -403,7 +408,7 @@ export function Uploader() {
       />
 
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {statusText}
+        {busy ? `${headline} ${progress}%` : ""}
       </div>
 
       {status.kind === "error" && (
