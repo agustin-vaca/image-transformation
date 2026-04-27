@@ -5,13 +5,12 @@ import { getEnv } from "@/server/env";
 import { ApiError, ErrorCodes, toErrorResponse } from "@/server/errors";
 import { PerfTimer } from "@/server/perf";
 import type { ApiResponse, ImageDTO } from "@/lib/api";
-import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
+import { MAX_UPLOAD_BYTES, UPLOAD_MIME_TYPE } from "@/lib/api";
 
 export const runtime = "nodejs";
-// BG removal can take >10s on cold starts; opt out of Vercel's 10s default.
-export const maxDuration = 60;
-
-const ACCEPTED_MIMES = new Set<string>(ACCEPTED_MIME_TYPES);
+// Server pipeline is now flip + upload only (~500ms typical), but keep some
+// headroom for slow R2 PutObject tail latency.
+export const maxDuration = 30;
 
 export async function POST(request: Request): Promise<NextResponse<ApiResponse<ImageDTO>>> {
   const timer = new PerfTimer("images.POST");
@@ -24,10 +23,12 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
     if (!(entry instanceof File)) {
       throw new ApiError(ErrorCodes.INVALID_FILE, "Missing 'file' field in form data");
     }
-    if (!ACCEPTED_MIMES.has(entry.type)) {
+    // The client always uploads PNG (post-browser-bg-removal). Anything else
+    // means a misconfigured / replayed client.
+    if (entry.type !== UPLOAD_MIME_TYPE) {
       throw new ApiError(
         ErrorCodes.INVALID_FILE,
-        `Unsupported mime type: ${entry.type || "unknown"}`,
+        `Expected ${UPLOAD_MIME_TYPE}, got ${entry.type || "unknown"}`,
       );
     }
     if (entry.size > MAX_UPLOAD_BYTES) {
@@ -58,3 +59,4 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<I
     timer.log({ inBytes, outBytes });
   }
 }
+

@@ -1,36 +1,33 @@
 import { computeExpiresAt } from "@/server/expiry";
 import type { ImageDTO } from "@/lib/api";
 import type { ImageProcessor } from "./index";
-import { BackgroundRemover } from "./bg-removal";
 import { Flipper } from "./flip";
-import { Resizer } from "./resize";
 import type { R2Storage } from "@/server/storage/r2";
 import { PerfTimer } from "@/server/perf";
 
-/** downscale → bg-removal → flip → R2 upload. */
+/**
+ * Server pipeline: flip → R2 upload.
+ *
+ * Background removal runs in the browser (`@imgly/background-removal`) and
+ * the client uploads the already-transparent PNG, so the server only needs
+ * to mirror it horizontally and store it. This change took median bgRemove
+ * from ~14s of CPU on a Vercel lambda to 0.
+ */
 export class R2ImageProcessor implements ImageProcessor {
   constructor(
     private readonly appBaseUrl: string,
     private readonly storage: R2Storage,
-    private readonly bgRemover: BackgroundRemover = new BackgroundRemover(),
     private readonly flipper: Flipper = new Flipper(),
-    private readonly resizer: Resizer = new Resizer(),
   ) {}
 
   async process(
     file: Buffer,
-    mime: string,
+    _mime: string,
     filename: string,
     timer?: PerfTimer,
   ): Promise<ImageDTO> {
     const t = timer ?? new PerfTimer("processor.process");
-    const prepared = await t.stage("downscale", () =>
-      this.resizer.downscale(file),
-    );
-    const transparent = await t.stage("bgRemove", () =>
-      this.bgRemover.remove(prepared, mime),
-    );
-    const flipped = await t.stage("flip", () => this.flipper.flip(transparent));
+    const flipped = await t.stage("flip", () => this.flipper.flip(file));
     const { id, previewUrl } = await t.stage("upload", () =>
       this.storage.put(flipped, "image/png"),
     );

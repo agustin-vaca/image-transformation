@@ -3,13 +3,23 @@
  * See PRD §6.
  */
 
-/** Single source of truth for the upload mime allowlist (client + server). */
+/**
+ * What the user can pick in the file dialog. Background removal happens in
+ * the browser, so the actual POST body is always a `image/png` (see
+ * UPLOAD_MIME_TYPE) — these mimes are only for the `<input accept>` filter.
+ */
 export const ACCEPTED_MIME_TYPES = [
   "image/png",
   "image/jpeg",
   "image/webp",
 ] as const satisfies readonly string[];
 export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
+
+/**
+ * The mime the server accepts on POST /api/images. The browser bg-removal
+ * pipeline always produces a PNG, so anything else is a misconfigured client.
+ */
+export const UPLOAD_MIME_TYPE = "image/png" as const;
 
 /** Hard upload limit shared by the client (pre-flight) and the API route. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;

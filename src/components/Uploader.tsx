@@ -7,17 +7,18 @@ import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_BYTES } from "@/lib/api";
 
 type Status =
   | { kind: "idle" }
+  | { kind: "loadingModel"; progress: number } // 0..100, sum of asset downloads
+  | { kind: "removingBackground" } // model running, no progress events
   | { kind: "uploading"; progress: number } // 0..100, real bytes from XHR
-  | { kind: "processing" } // upload done; server doing bg-removal + flip
+  | { kind: "processing" } // upload done; server flips + R2 puts
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 
-// Rotating one-liners shown while the server does bg-removal + flip.
-// Order is shuffled per-mount so reloads don't always start with the same line.
+// Rotating one-liners shown while the local model crunches the image.
 const PROCESSING_MESSAGES: ReadonlyArray<string> = [
-  "Removing background & flipping\u2026",
+  "Removing background\u2026",
   "Teaching pixels to face the other way\u2026",
   "Asking the background to please leave\u2026",
   "Negotiating with stubborn pixels\u2026",
@@ -30,14 +31,46 @@ const PROCESSING_MESSAGES: ReadonlyArray<string> = [
 ];
 const MESSAGE_ROTATION_MS = 2500;
 
-/**
- * Two-phase upload:
- *   1) "Uploading <pct>%" — driven by real XHR upload progress bytes.
- *   2) "Removing background & flipping…" — request in flight, no client-visible
- *      sub-phases (we don't fake server progress).
- */
+// Lazy-cached imgly module + asset preload promise. The module is ~200KB JS
+// plus ~40MB of WASM/ONNX weights, so we only load when the user shows
+// intent (hover, focus, drag-enter, or first file pick).
+type ImglyModule = typeof import("@imgly/background-removal");
+let imglyPromise: Promise<ImglyModule> | undefined;
+let preloadPromise: Promise<void> | undefined;
+
+function loadImgly(): Promise<ImglyModule> {
+  imglyPromise ??= import("@imgly/background-removal");
+  return imglyPromise;
+}
+
+/** Kick off the model + WASM download in the background. Idempotent. */
+function warmupModel(onProgress?: (pct: number) => void): Promise<void> {
+  preloadPromise ??= (async () => {
+    const mod = await loadImgly();
+    // The library reports many keys (wasm, onnx, configs). Aggregate them
+    // into a single 0..100% so the UI can show one bar.
+    const totals = new Map<string, { current: number; total: number }>();
+    await mod.preload({
+      model: "isnet_quint8",
+      progress: (key: string, current: number, total: number) => {
+        totals.set(key, { current, total });
+        if (!onProgress) return;
+        let sumC = 0;
+        let sumT = 0;
+        for (const v of totals.values()) {
+          sumC += v.current;
+          sumT += v.total;
+        }
+        if (sumT > 0) onProgress(Math.round((sumC / sumT) * 100));
+      },
+    });
+  })();
+  return preloadPromise;
+}
+
 function uploadWithProgress(
-  file: File,
+  blob: Blob,
+  filename: string,
   onProgress: (pct: number) => void,
   onUploaded: () => void,
 ): Promise<ApiResponse<ImageDTO>> {
@@ -59,7 +92,7 @@ function uploadWithProgress(
       }
     };
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", blob, filename);
     xhr.send(form);
   });
 }
@@ -70,14 +103,18 @@ export function Uploader() {
   const [dragOver, setDragOver] = useState(false);
   const [messageIndex, setMessageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const busy = status.kind === "uploading" || status.kind === "processing";
+  const busy =
+    status.kind === "loadingModel" ||
+    status.kind === "removingBackground" ||
+    status.kind === "uploading" ||
+    status.kind === "processing";
 
-  // Rotate the funny processing messages every MESSAGE_ROTATION_MS while the
-  // server is working. The first tick fires immediately and jumps by a random
-  // offset so back-to-back uploads feel fresh; subsequent ticks advance one
-  // line at a time.
+  // Rotate the funny messages every MESSAGE_ROTATION_MS while bg-removal is
+  // running.
   useEffect(() => {
-    if (status.kind !== "processing") return;
+    if (status.kind !== "removingBackground" && status.kind !== "processing") {
+      return;
+    }
     const offset =
       1 + Math.floor(Math.random() * (PROCESSING_MESSAGES.length - 1));
     let step = offset;
@@ -87,6 +124,17 @@ export function Uploader() {
     }, MESSAGE_ROTATION_MS);
     return () => clearInterval(interval);
   }, [status.kind]);
+
+  // Hint the browser to start fetching imgly + assets the first time the user
+  // shows intent. Failure is silent — the upload path will retry with UI.
+  const intentTriggered = useRef(false);
+  const onIntent = useCallback(() => {
+    if (intentTriggered.current) return;
+    intentTriggered.current = true;
+    void warmupModel().catch(() => {
+      /* surface on actual upload */
+    });
+  }, []);
 
   const upload = useCallback(
     async (file: File) => {
@@ -98,13 +146,51 @@ export function Uploader() {
         setStatus({ kind: "error", message: "File exceeds 10 MB limit." });
         return;
       }
-      setStatus({ kind: "uploading", progress: 0 });
+
+      const tStart = performance.now();
       try {
+        // Phase 1: ensure model + WASM are loaded.
+        if (!preloadPromise) {
+          setStatus({ kind: "loadingModel", progress: 0 });
+          await warmupModel((pct) =>
+            setStatus({ kind: "loadingModel", progress: pct }),
+          );
+        } else {
+          await preloadPromise;
+        }
+        const tModelReady = performance.now();
+
+        // Phase 2: run bg-removal locally. The library doesn't emit progress
+        // during inference, so we just show a spinner here.
+        setStatus({ kind: "removingBackground" });
+        const mod = await loadImgly();
+        const transparent = await mod.removeBackground(file, {
+          model: "isnet_quint8",
+          output: { format: "image/png" },
+        });
+        const tBgDone = performance.now();
+
+        // Phase 3: upload the transparent PNG. Server flips + stores.
+        setStatus({ kind: "uploading", progress: 0 });
+        const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
         const json = await uploadWithProgress(
-          file,
+          transparent,
+          baseName,
           (pct) => setStatus({ kind: "uploading", progress: pct }),
           () => setStatus({ kind: "processing" }),
         );
+        const tUploadDone = performance.now();
+
+        // Mirror the server's [perf] line so we have client-side numbers in
+        // DevTools alongside the Vercel server logs.
+        console.info(
+          `[perf-client] upload modelLoad=${Math.round(tModelReady - tStart)}ms ` +
+            `bgRemove=${Math.round(tBgDone - tModelReady)}ms ` +
+            `upload+server=${Math.round(tUploadDone - tBgDone)}ms ` +
+            `total=${Math.round(tUploadDone - tStart)}ms ` +
+            `inBytes=${file.size} outBytes=${transparent.size}`,
+        );
+
         if (!json.ok) {
           setStatus({ kind: "error", message: json.error.message });
           return;
@@ -122,7 +208,6 @@ export function Uploader() {
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    // Clear so selecting the same file again still fires onChange.
     e.target.value = "";
     if (file) void upload(file);
   };
@@ -136,18 +221,27 @@ export function Uploader() {
   };
 
   const statusText =
-    status.kind === "uploading"
-      ? `Uploading ${status.progress}%`
-      : status.kind === "processing"
+    status.kind === "loadingModel"
+      ? `Loading background-removal model… ${status.progress}%`
+      : status.kind === "removingBackground"
         ? PROCESSING_MESSAGES[messageIndex]
-        : "";
+        : status.kind === "uploading"
+          ? `Uploading ${status.progress}%`
+          : status.kind === "processing"
+            ? "Flipping & saving\u2026"
+            : "";
 
   return (
     <div className="w-full flex flex-col gap-6">
       <label
+        onPointerEnter={onIntent}
+        onFocus={onIntent}
         onDragOver={(e) => {
           e.preventDefault();
-          if (!busy) setDragOver(true);
+          if (!busy) {
+            onIntent();
+            setDragOver(true);
+          }
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
@@ -170,17 +264,20 @@ export function Uploader() {
         {busy ? (
           <div className="flex flex-col items-center gap-3 w-full">
             <Spinner />
-            <span className="text-sm text-on-surface-variant">
-              {statusText}
-            </span>
-            {status.kind === "uploading" && (
+            <span className="text-sm text-on-surface-variant">{statusText}</span>
+            {(status.kind === "uploading" ||
+              status.kind === "loadingModel") && (
               <div
                 className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
                 role="progressbar"
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={status.progress}
-                aria-label="Upload progress"
+                aria-label={
+                  status.kind === "loadingModel"
+                    ? "Model load progress"
+                    : "Upload progress"
+                }
               >
                 <div
                   className="h-full bg-primary transition-[width] duration-150"
@@ -207,7 +304,7 @@ export function Uploader() {
               Choose image
             </span>
             <span className="mt-2 text-xs text-on-surface-variant">
-              PNG, JPEG, or WebP · up to 10 MB
+              PNG, JPEG, or WebP · up to 10 MB · processed in your browser
             </span>
           </>
         )}
