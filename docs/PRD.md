@@ -135,6 +135,7 @@ Rejected alternatives: Geolocation API (permission prompt + privacy theater for 
 | Metadata store       | **None** \u2014 R2 object metadata (`LastModified`) is the source of truth for `expiresAt` | Eliminates a moving part. Storage already returns the timestamp we need; adding a database would just duplicate it. Easy to introduce later behind a `MetadataStore` module if richer queries are needed. |
 | Cleanup mechanism    | **Both**: Vercel Cron daily **and** lazy-on-read | Cron physically deletes objects past TTL once a day (Hobby tier cap); lazy-on-read on `/i/[id]` guarantees users never see an expired image even if cron is delayed. |
 | Hosting (deploy)     | **Vercel**                                      | Native Next.js App Router, built-in Cron, generous free tier, `git push` deploy. |
+| UI design            | **[Google Stitch](https://stitch.withgoogle.com/)** (free tier) — Luminous SaaS template, project "ClearFlip Image Processor" | No designer on the team. Stitch generated the four reference screens (`docs/design/stitch/`) plus a token set we mapped into Tailwind's `@theme inline`. Free, exportable, gives the app a coherent look without burning an engineering day on visual polish. |
 
 ---
 

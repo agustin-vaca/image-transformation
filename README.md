@@ -27,6 +27,7 @@
 - **Metadata:** none — R2's `LastModified` is the source of truth for `expiresAt`
 - **Cleanup:** Vercel Cron (daily, Hobby tier cap) + lazy-on-read
 - **Deploy:** Vercel
+- **UI design:** [Google Stitch](https://stitch.withgoogle.com/) (free tier) — generated the layouts, palette, and design tokens checked into [`docs/design/stitch/`](docs/design/stitch/) and mapped 1:1 into Tailwind's `@theme inline`
 
 See [PRD §5 / §9](docs/PRD.md) for the full rationale.
 

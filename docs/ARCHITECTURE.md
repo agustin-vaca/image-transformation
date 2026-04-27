@@ -350,3 +350,9 @@ Considered Jest. Vitest is faster, has native ESM/TS support, and `@vitest/cover
 
 `@theme inline` lets us declare design tokens once in CSS and use them as Tailwind utilities (`bg-primary`, `text-on-surface`) without a JS config file. Considered CSS Modules (more boilerplate) and styled-components (runtime cost on Server Components is fragile).
 
+### UI design — Google Stitch (free tier)
+
+We didn't hand-design the UI. The look (typography scale, color palette, dark surface ramp, card/upload-zone shapes, processing/result/404 layouts) came from a free [**Google Stitch**](https://stitch.withgoogle.com/) project — "ClearFlip Image Processor" on the Luminous SaaS template. Stitch generated the four reference screens checked into [`docs/design/stitch/`](design/stitch/) (`01-landing`, `02-processing`, `03-result`, `04-not-found`) along with a token set we mapped 1:1 into Tailwind's `@theme inline` block (see [issue 011](issues/done/011-apply-stitch-design-system.md) for the slice that applied it).
+
+Why it's worth calling out: a single-engineer project with no designer would otherwise either ship a generic Tailwind UI Kit look or burn a day fiddling with spacing. Stitch gave us a coherent, opinionated visual system in minutes, for free, with exportable HTML/PNG references the slice could be QA'd against. The trade-off is that we're locked into the tokens it picked — but `@theme inline` makes those one CSS edit to swap.
+
