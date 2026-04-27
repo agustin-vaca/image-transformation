@@ -14,31 +14,64 @@ import {
   removeBackgroundInWorker,
   warmupModel,
 } from "@/lib/bg-removal-client";
+import { createSmoothProgress, PhaseEtaTracker } from "@/lib/smooth-progress";
 import { CameraModal } from "@/components/CameraModal";
+
+type Stage = "warmup" | "removing" | "uploading";
 
 type Status =
   | { kind: "idle" }
-  | { kind: "loadingModel"; progress: number }
-  | { kind: "removingBackground" }
-  | { kind: "uploading"; progress: number }
+  | { kind: "processing"; progress: number; stage: Stage }
   | { kind: "error"; message: string };
 
 const ACCEPTED = ACCEPTED_MIME_TYPES.join(",");
 const ACCEPTED_SET = new Set<string>(ACCEPTED_MIME_TYPES);
 
-const PROCESSING_MESSAGES: ReadonlyArray<string> = [
-  "Removing background\u2026",
-  "Teaching pixels to face the other way\u2026",
-  "Asking the background to please leave\u2026",
-  "Negotiating with stubborn pixels\u2026",
-  "Holding up a tiny mirror\u2026",
-  "Convincing photons to swap sides\u2026",
-  "Yelling \u2018left is the new right\u2019\u2026",
-  "Polishing your reflection\u2026",
-  "Doing yoga with your photo\u2026",
-  "Almost there. Probably.\u2026",
-];
+// One list per pipeline stage. The headline rotates within the active
+// stage's list, so the copy actually tracks what the app is doing
+// (warming up the model, running bg-removal, or uploading to R2). Each
+// list mixes a plain "what’s happening" line with sillier ones so the
+// user always gets a hint of the real state.
+const STAGE_MESSAGES: Record<Stage, ReadonlyArray<string>> = {
+  warmup: [
+    "Waking up the AI\u2026",
+    "Downloading tiny brains\u2026",
+    "Pouring espresso for the model\u2026",
+    "Loading neural network\u2026",
+    "Booting up the pixel wizard\u2026",
+    "Stretching before the heavy lifting\u2026",
+  ],
+  removing: [
+    "Removing background\u2026",
+    "Asking the background to please leave\u2026",
+    "Negotiating with stubborn pixels\u2026",
+    "Teaching pixels to face the other way\u2026",
+    "Holding up a tiny mirror\u2026",
+    "Convincing photons to swap sides\u2026",
+    "Yelling \u2018left is the new right\u2019\u2026",
+    "Cutting you out of the scene\u2026",
+    "Erasing everything that isn\u2019t you\u2026",
+  ],
+  uploading: [
+    "Uploading your image\u2026",
+    "Beaming pixels to the cloud\u2026",
+    "Mailing your photo to the internet\u2026",
+    "Finding a good URL for it\u2026",
+    "Tucking your image into storage\u2026",
+    "Almost there. Probably.\u2026",
+  ],
+};
 const MESSAGE_ROTATION_MS = 2500;
+
+// Plain-English label per stage for the screen-reader live region. Kept
+// separate from the funny rotating copy so assistive tech gets a stable,
+// informative phrase exactly when the pipeline advances (and not on every
+// percentage tick or every 2.5s when the headline rotates).
+const STAGE_ANNOUNCEMENTS: Record<Stage, string> = {
+  warmup: "Loading background-removal model.",
+  removing: "Removing background and flipping image.",
+  uploading: "Uploading image.",
+};
 
 /**
  * Decode the input file, downscale so its longest edge is at most
@@ -77,6 +110,7 @@ function uploadToR2WithProgress(
   headers: Record<string, string>,
   body: Blob,
   onProgress: (pct: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -86,10 +120,18 @@ function uploadToR2WithProgress(
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onabort = () => reject(new DOMException("Upload aborted", "AbortError"));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new Error(`Upload rejected (status ${xhr.status})`));
     };
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
     xhr.send(body);
   });
 }
@@ -108,34 +150,53 @@ async function requestSignedUpload(
   return json.data;
 }
 
+// Module-level so the second upload's ETAs come from the first upload's
+// measured wall-clock times instead of these defaults.
+const phaseEta = new PhaseEtaTracker({
+  model: 4000, // model + WASM download (cold network)
+  bgRemove: 4500, // imgly inference on a midrange laptop, no progress events
+  upload: 1500, // 0.5–1 MB PNG to R2 over typical home broadband
+});
+
 export function Uploader() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [messageIndex, setMessageIndex] = useState(() =>
-    Math.floor(Math.random() * PROCESSING_MESSAGES.length),
-  );
+  const [messageIndex, setMessageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const busy =
-    status.kind === "loadingModel" ||
-    status.kind === "removingBackground" ||
-    status.kind === "uploading";
+  // Track the in-flight upload so we can stop the rAF loop and abort the
+  // XHR if the component unmounts mid-upload (route change, parent
+  // remount, etc.). Without this React would warn about setStatus on an
+  // unmounted component and the XHR would continue uselessly in the
+  // background.
+  const activeSmoothRef = useRef<{ stop: () => void } | null>(null);
+  const activeAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      activeSmoothRef.current?.stop();
+      activeAbortRef.current?.abort();
+    },
+    [],
+  );
+  const busy = status.kind === "processing";
+  const stage: Stage | null = status.kind === "processing" ? status.stage : null;
 
-  // Rotate the funny messages for the entire duration of any busy phase
-  // (model load, bg removal, upload, save). The list is constant; only the
-  // starting index (seeded in `upload`) and step are randomized so consecutive
-  // uploads vary.
+  // Rotate within the current stage's list on a timer. The fresh starting
+  // index for each stage is seeded by `upload` (an event handler) when it
+  // transitions stages, so we don't need to call setState during render or
+  // inside this effect on mount.
   useEffect(() => {
-    if (!busy) return;
-    const step =
-      1 + Math.floor(Math.random() * (PROCESSING_MESSAGES.length - 1));
+    if (!stage) return;
+    const list = STAGE_MESSAGES[stage];
+    if (list.length <= 1) return;
+    const step = 1 + Math.floor(Math.random() * (list.length - 1));
     const interval = setInterval(() => {
-      setMessageIndex((i) => (i + step) % PROCESSING_MESSAGES.length);
+      setMessageIndex((i) => (i + step) % list.length);
     }, MESSAGE_ROTATION_MS);
     return () => clearInterval(interval);
-  }, [busy]);
+  }, [stage]);
 
   const intentTriggered = useRef(false);
   const onIntent = useCallback(() => {
@@ -161,21 +222,63 @@ export function Uploader() {
       }
 
       const tStart = performance.now();
-      // Seed a fresh random starting message for this upload. Done in the
-      // event handler (not in an effect) to avoid a cascading render.
-      setMessageIndex(Math.floor(Math.random() * PROCESSING_MESSAGES.length));
-      try {
-        // Phase 1: model + WASM. Worker-hosted so the main thread stays free
-        // to animate the spinner and rotate the messages.
-        setStatus({ kind: "loadingModel", progress: getPreloadProgress() });
-        await warmupModel((pct) =>
-          setStatus({ kind: "loadingModel", progress: pct }),
+
+      // Drive the bar from a single time-based estimator. Real progress
+      // events from the underlying phases are intentionally NOT used for
+      // display — they only feed `phaseEta` so the next upload's ETA is
+      // more accurate. Mixing them in is what produced the "stuck at 60%
+      // then sprint to 100" feel; one continuous linear climb feels more
+      // natural even if the timing is approximate.
+      const modelAlreadyWarm = getPreloadProgress() >= 100;
+      const totalEta =
+        (modelAlreadyWarm ? 0 : phaseEta.get("model")) +
+        phaseEta.get("bgRemove") +
+        phaseEta.get("upload");
+      // Track the current stage independently of the bar so the headline
+      // reflects what is actually happening in the pipeline (warmup ->
+      // removing -> uploading) instead of just a percentage. The bar's
+      // value is mirrored in a local so stage transitions can re-emit
+      // status without reading stale React state.
+      let currentStage: Stage = modelAlreadyWarm ? "removing" : "warmup";
+      let currentProgress = 0;
+      const emit = () =>
+        setStatus({
+          kind: "processing",
+          progress: currentProgress,
+          stage: currentStage,
+        });
+      const enterStage = (next: Stage) => {
+        currentStage = next;
+        // Seed a random starting message for the new stage's list so the
+        // headline visibly turns over the moment the pipeline advances.
+        setMessageIndex(
+          Math.floor(Math.random() * STAGE_MESSAGES[next].length),
         );
+        emit();
+      };
+      const smooth = createSmoothProgress((pct) => {
+        currentProgress = pct;
+        emit();
+      });
+      const abort = new AbortController();
+      activeSmoothRef.current = smooth;
+      activeAbortRef.current = abort;
+      smooth.start(totalEta);
+      enterStage(currentStage);
+
+      try {
+        // Phase 1: model + WASM (worker-hosted; main thread stays free).
+        await warmupModel();
         const tModelReady = performance.now();
+        if (!modelAlreadyWarm) {
+          phaseEta.observe("model", tModelReady - tStart);
+        }
+        if (currentStage === "warmup") {
+          enterStage("removing");
+        }
 
         // Phase 2: decode + flip + downscale on main thread (cheap, ~10ms),
         // then ship the encoded PNG into the worker for bg-removal.
-        setStatus({ kind: "removingBackground" });
         const { canvas, originalW, originalH } = await decodeFlipDownscale(file);
         const flippedBlob = await new Promise<Blob>((resolve, reject) => {
           canvas.toBlob(
@@ -185,20 +288,29 @@ export function Uploader() {
         });
         const transparent = await removeBackgroundInWorker(flippedBlob);
         const tBgDone = performance.now();
+        phaseEta.observe("bgRemove", tBgDone - tModelReady);
+        enterStage("uploading");
 
         // Phase 3: ask the server for a presigned PUT URL, then upload the
         // bytes directly to R2.
-        setStatus({ kind: "uploading", progress: 0 });
         const baseName = file.name.replace(/\.[^.]+$/, "") + ".png";
         const signed = await requestSignedUpload(baseName, transparent.size);
         await uploadToR2WithProgress(
           signed.upload.url,
           signed.upload.headers,
           transparent,
-          (pct) => setStatus({ kind: "uploading", progress: pct }),
+          () => {
+            /* upload progress events ignored for display — see comment above */
+          },
+          abort.signal,
         );
+        smooth.complete();
         const tUploadDone = performance.now();
+        phaseEta.observe("upload", tUploadDone - tBgDone);
 
+        // Debug/diagnostic only — a single `[perf-client]` log line per upload
+        // so we can eyeball model-load vs bg-removal vs upload time in DevTools.
+        // Has no effect on the user-visible flow.
         console.info(
           `[perf-client] upload modelLoad=${Math.round(tModelReady - tStart)}ms ` +
             `bgRemove+flip=${Math.round(tBgDone - tModelReady)}ms ` +
@@ -210,10 +322,18 @@ export function Uploader() {
 
         router.push(signed.image.shareUrl);
       } catch (err) {
+        smooth.stop();
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Component unmounted mid-upload — nothing to surface.
+          return;
+        }
         setStatus({
           kind: "error",
           message: err instanceof Error ? err.message : "Upload failed",
         });
+      } finally {
+        if (activeSmoothRef.current === smooth) activeSmoothRef.current = null;
+        if (activeAbortRef.current === abort) activeAbortRef.current = null;
       }
     },
     [router],
@@ -266,17 +386,17 @@ export function Uploader() {
     [upload],
   );
 
-  // The headline is always one of the funny rotating messages while busy, so
-  // the first upload (which has to download the model) feels the same as any
-  // subsequent one. Phase-specific detail (percentages) lives below the bar.
-  const headline = busy ? PROCESSING_MESSAGES[messageIndex] : "";
-  const subText =
-    status.kind === "loadingModel"
-      ? `Warming up the model\u2026 ${status.progress}%`
-      : status.kind === "uploading"
-        ? `Uploading\u2026 ${status.progress}%`
-        : "";
-  const statusText = subText ? `${headline} \u2014 ${subText}` : headline;
+  // The headline rotates within the current stage's message list so the
+  // copy reflects what the pipeline is actually doing (warming up the
+  // model, removing the background, or uploading). The single bar below
+  // (0→100% across all stages, time-driven) is unaffected by which list
+  // is active.
+  const stageList = stage ? STAGE_MESSAGES[stage] : null;
+  const headline =
+    stageList && stageList.length > 0
+      ? (stageList[messageIndex % stageList.length] ?? stageList[0] ?? "")
+      : "";
+  const progress = status.kind === "processing" ? status.progress : 0;
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -317,29 +437,20 @@ export function Uploader() {
             >
               {headline}
             </span>
-            {(status.kind === "uploading" ||
-              status.kind === "loadingModel") && (
+            <div
+              className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+              aria-label="Processing progress"
+            >
               <div
-                className="w-full max-w-xs h-1.5 rounded-full bg-surface-container overflow-hidden"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={status.progress}
-                aria-label={
-                  status.kind === "loadingModel"
-                    ? "Model load progress"
-                    : "Upload progress"
-                }
-              >
-                <div
-                  className="h-full bg-primary transition-[width] duration-150"
-                  style={{ width: `${status.progress}%` }}
-                />
-              </div>
-            )}
-            {subText && (
-              <span className="text-xs text-on-surface-variant">{subText}</span>
-            )}
+                className="h-full bg-primary transition-[width] duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-xs text-on-surface-variant">{progress}%</span>
           </div>
         ) : (
           <>
@@ -399,8 +510,13 @@ export function Uploader() {
         onCapture={onCameraCapture}
       />
 
+      {/* Announce only stage transitions (warmup -> removing -> uploading)
+          rather than the rotating funny headline or every percentage change.
+          Otherwise screen readers get spammed every 2.5s by the rotating
+          copy and on every progress emit. `STAGE_ANNOUNCEMENTS` keeps the
+          phrase plain (no jokes) so the announcement is informative. */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {statusText}
+        {stage ? STAGE_ANNOUNCEMENTS[stage] : ""}
       </div>
 
       {status.kind === "error" && (

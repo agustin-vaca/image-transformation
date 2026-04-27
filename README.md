@@ -19,12 +19,15 @@
 
 - **Framework:** Next.js (App Router, TypeScript strict)
 - **UI:** React + Tailwind
-- **Background removal:** [`@imgly/background-removal`](https://github.com/imgly/background-removal-js) (browser, WASM, AGPL, $0)
-- **Image processing:** [`sharp`](https://sharp.pixelplumbing.com/) (`.flop()` for horizontal flip)
+- **Image input:** drag-and-drop, file picker, **and live camera capture** (desktop `getUserMedia` modal + mobile `<input capture>` fallback)
+- **Background removal:** [`@imgly/background-removal`](https://github.com/imgly/background-removal-js) (browser, WASM, AGPL, $0) — runs inside a **Web Worker** so the UI stays responsive
+- **Horizontal flip:** client-side `<canvas>` `scale(-1, 1)` (no `sharp`, no server CPU)
+- **Upload path:** browser → server-signed PUT URL → **direct-to-R2** (server never touches the bytes; bypasses Vercel's 4.5 MB body limit, hard cap is **10 MB**)
 - **Storage:** Cloudflare R2 (S3-compatible, zero egress)
 - **Metadata:** none — R2's `LastModified` is the source of truth for `expiresAt`
 - **Cleanup:** Vercel Cron (daily, Hobby tier cap) + lazy-on-read
 - **Deploy:** Vercel
+- **UI design:** [Google Stitch](https://stitch.withgoogle.com/) (free tier) — generated the layouts, palette, and design tokens checked into [`docs/design/stitch/`](docs/design/stitch/) and mapped 1:1 into Tailwind's `@theme inline`
 
 See [PRD §5 / §9](docs/PRD.md) for the full rationale.
 
@@ -36,6 +39,7 @@ See [PRD §5 / §9](docs/PRD.md) for the full rationale.
 │   ├── app/          # Next.js UI + thin Route Handlers
 │   ├── server/       # framework-agnostic business logic (no next/* imports)
 │   ├── components/
+│   ├── workers/      # Web Worker(s) (e.g. bg-removal off the main thread)
 │   └── lib/          # client-only helpers
 ├── tests/        # vitest
 ├── docs/         # PRD + issue backlog
