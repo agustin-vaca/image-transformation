@@ -20,7 +20,7 @@
 - **Framework:** Next.js (App Router, TypeScript strict)
 - **UI:** React + Tailwind
 - **Image input:** drag-and-drop, file picker, **and live camera capture** (desktop `getUserMedia` modal + mobile `<input capture>` fallback)
-- **Background removal:** [`@imgly/background-removal`](https://github.com/imgly/background-removal-js) (browser, WASM, AGPL, $0) — runs inside a **Web Worker** so the UI stays responsive
+- **Background removal:** [`@huggingface/transformers`](https://github.com/huggingface/transformers.js) running [`Xenova/modnet`](https://huggingface.co/Xenova/modnet) (browser, **WebGPU + q4f16** with WASM/fp32 fallback, Apache-2.0, $0) — runs inside a **Web Worker** so the UI stays responsive
 - **Horizontal flip:** client-side `<canvas>` `scale(-1, 1)` (no `sharp`, no server CPU)
 - **Upload path:** browser → server-signed PUT URL → **direct-to-R2** (server never touches the bytes; bypasses Vercel's 4.5 MB body limit, hard cap is **10 MB**)
 - **Storage:** Cloudflare R2 (S3-compatible, zero egress)

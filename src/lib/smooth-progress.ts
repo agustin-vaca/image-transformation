@@ -1,17 +1,21 @@
 // Drives a 0..100 progress bar from a single time-based estimator.
 //
-// Background: imgly's `progress` callback only fires for asset downloads
-// (model + WASM). On a warm second upload, `removeBackground` runs purely on
-// cached assets and emits ZERO events during inference. And the R2 PUT
-// usually finishes in well under a second, so XHR progress events arrive in
-// a burst at the very end. Driving the bar from a mix of those uneven event
-// streams is what produced the "stuck at 60% then sprint to 100" feel.
+// Background: the underlying transformers.js / R2 pipeline emits very
+// uneven progress events — model + WASM downloads come in big chunks,
+// inference is silent, and the R2 PUT usually finishes in under a second
+// so XHR progress events arrive in a burst at the very end. Driving the
+// bar from those uneven streams directly produces the "stuck at 60% then
+// sprint to 100" feel.
 //
-// Design: ONE continuous, linear climb across the whole pipeline.
+// Design: ONE continuous, monotonic climb across the whole pipeline.
 // - Caller declares `totalEtaMs` up front (sum of typical phase durations,
 //   tracked by `PhaseEtaTracker`).
-// - The bar climbs linearly from 0 toward 95% over that span, then idles at
-//   95% if the work outlives the ETA.
+// - The bar climbs linearly from 0 toward `SOFT_CAP` (95%) over the ETA.
+// - If the work outlives the ETA, the bar SLOWLY creeps from `SOFT_CAP`
+//   toward `HARD_CAP` (99%) using exponential decay so it visibly keeps
+//   moving without ever reaching 100% prematurely. (Idling flat at 95%
+//   reads as "stuck"; cold first-visit downloads routinely overrun the
+//   default ETA, so we need to keep the bar alive.)
 // - `complete()` snaps the bar to 100% when the entire pipeline is done.
 // - Real progress events from individual phases are intentionally NOT used
 //   for display — they only feed `PhaseEtaTracker` so the *next* upload's
@@ -28,7 +32,13 @@ export interface SmoothProgress {
   stop(): void;
 }
 
-const SOFT_CAP = 95; // bar idles here if work outlives the ETA
+const SOFT_CAP = 95; // end of the linear-climb phase
+const HARD_CAP = 99; // asymptote of the creep phase
+// Per-second fraction of the remaining gap to HARD_CAP that the creep
+// phase covers. ~3% means: at 95% it advances ~0.12%/s, at 98% ~0.03%/s
+// — fast enough to feel alive, slow enough not to pin against 99% in a
+// few seconds.
+const CREEP_RATE_PER_SEC = 0.03;
 
 export function createSmoothProgress(
   onChange: (pct: number) => void,
@@ -36,6 +46,7 @@ export function createSmoothProgress(
   let value = 0;
   let totalEtaMs = 1;
   let startedAt = 0;
+  let lastTickAt = 0;
   let raf = 0;
   let lastEmitted = -1;
 
@@ -48,18 +59,24 @@ export function createSmoothProgress(
 
   function tick() {
     raf = 0;
-    const elapsed = performance.now() - startedAt;
-    const linear = Math.min(SOFT_CAP, (elapsed / totalEtaMs) * SOFT_CAP);
-    if (linear > value) {
-      value = linear;
-      emit();
-    }
-    // Once the linear climb has reached SOFT_CAP the value will not move
-    // again until `complete()` snaps to 100% — so there's nothing to
-    // redraw. Stop the rAF loop instead of burning 60fps until the
-    // pipeline finishes (matters if the network stalls or the user
-    // backgrounds the tab).
+    const now = performance.now();
+    const elapsed = now - startedAt;
+    const dt = Math.max(0, now - lastTickAt) / 1000;
+    lastTickAt = now;
+
     if (value < SOFT_CAP) {
+      const linear = Math.min(SOFT_CAP, (elapsed / totalEtaMs) * SOFT_CAP);
+      if (linear > value) value = linear;
+    } else if (value < HARD_CAP) {
+      // Exponential approach: dv/dt = (HARD_CAP - v) * rate.
+      const next = value + (HARD_CAP - value) * CREEP_RATE_PER_SEC * dt;
+      if (next > value) value = Math.min(HARD_CAP, next);
+    }
+    emit();
+
+    // Stop the rAF loop once we've effectively reached HARD_CAP — there's
+    // no more visible movement until `complete()` snaps to 100%.
+    if (value < HARD_CAP - 0.01) {
       raf = requestAnimationFrame(tick);
     }
   }
@@ -68,6 +85,7 @@ export function createSmoothProgress(
     start(ms: number) {
       totalEtaMs = Math.max(1, ms);
       startedAt = performance.now();
+      lastTickAt = startedAt;
       value = 0;
       lastEmitted = -1;
       emit();
