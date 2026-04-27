@@ -8,20 +8,28 @@ import { ApiError, ErrorCodes } from "@/server/errors";
 // Vercel's NFT tracer needs the dist/ folder explicitly listed in
 // `outputFileTracingIncludes` (see next.config.ts) — once that's in place,
 // `require.resolve` returns the path inside the deployed lambda.
-const require = createRequire(import.meta.url);
-// The package's `exports` map doesn't expose ./package.json, so resolve the
-// main entry (which lives in dist/) and walk up to the dist directory.
-const IMGLY_DIST_DIR = path.dirname(
-  require.resolve("@imgly/background-removal-node"),
-);
-const IMGLY_LOCAL_PUBLIC_PATH = pathToFileURL(IMGLY_DIST_DIR + path.sep).href;
+//
+// Two evasions vs Turbopack's static analysis:
+//   1. The package name is built at runtime so the bundler can't rewrite the
+//      `require.resolve(...)` call into a numeric module ID.
+//   2. Resolution happens lazily inside `remove()`, not at module-load —
+//      otherwise Next.js's "Collecting page data" phase fails the build.
+const lazyRequire = createRequire(import.meta.url);
+let cachedPublicPath: string | undefined;
+function getImglyPublicPath(): string {
+  if (cachedPublicPath !== undefined) return cachedPublicPath;
+  const pkgName = ["@imgly", "background-removal-node"].join("/");
+  const distDir = path.dirname(lazyRequire.resolve(pkgName));
+  cachedPublicPath = pathToFileURL(distDir + path.sep).href;
+  return cachedPublicPath;
+}
 
 export class BackgroundRemover {
   async remove(buf: Buffer, mime: string = "image/png"): Promise<Buffer> {
     try {
       const blob = new Blob([new Uint8Array(buf)], { type: mime });
       const out = await removeBackground(blob, {
-        publicPath: IMGLY_LOCAL_PUBLIC_PATH,
+        publicPath: getImglyPublicPath(),
         // The "small" variant (~42 MB) is plenty for a flip+share preview and
         // runs noticeably faster than the default ("medium").
         model: "small",
