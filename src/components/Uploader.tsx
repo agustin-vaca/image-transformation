@@ -153,8 +153,8 @@ async function requestSignedUpload(
 // Module-level so the second upload's ETAs come from the first upload's
 // measured wall-clock times instead of these defaults.
 const phaseEta = new PhaseEtaTracker({
-  model: 14000, // ~88 MB RMBG-1.4 fp32 + ~10 MB WASM, cold network
-  bgRemove: 6000, // RMBG-1.4 inference on a midrange laptop, no per-image progress
+  model: 18000, // ~110 MB BiRefNet fp16 (WebGPU) or ~220 MB fp32 (WASM) cold
+  bgRemove: 5000, // BiRefNet inference: ~1s WebGPU / ~6s WASM, EMA adapts
   upload: 1500, // 0.5–1 MB PNG to R2 over typical home broadband
 });
 

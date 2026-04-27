@@ -1,26 +1,28 @@
 /// <reference lib="webworker" />
 //
 // Runs background removal off the main thread using @huggingface/transformers
-// (transformers.js) with the BRIA RMBG-1.4 model. ONNX inference + WASM
-// compile do enough sync work to stall the main-thread renderer (frozen
-// spinner / paused message rotation), so we keep it inside a dedicated
-// worker so the main-thread CSS animations and React state updates keep
-// ticking.
+// (transformers.js) with the BiRefNet matting model (MIT-licensed,
+// commercially safe). Inference + WASM/WebGPU compile do enough sync work
+// to stall the main-thread renderer, so we keep them inside a dedicated
+// worker so the spinner / rotating headlines keep ticking.
 //
-// Why RMBG-1.4 instead of imgly's ISNet variants:
-// - Visibly better edges on hair, fur, translucent fabrics — the dimension
-//   imgly's quint8/fp16 ISNet struggles with.
-// - Same in-browser, zero-cost path (no API key, no quota).
-// - Caveat: BRIA RMBG-1.4 is licensed for non-commercial use. Acceptable
-//   for a portfolio/demo; commercial productization would need a BRIA
-//   commercial license or a different model.
+// Why BiRefNet:
+// - Currently the leading open-weight matting model on hair / fur / glass /
+//   complex edges. Visibly cleaner than RMBG-1.4 and the ISNet variants.
+// - MIT licensed (no non-commercial caveat).
+// - Bigger weights (~110 MB fp16, ~220 MB fp32). Mitigated by on-intent
+//   preload + the smooth-progress UI absorbing a longer cold load. We try
+//   WebGPU + fp16 first for fast inference; fall back to WASM + fp32 on
+//   browsers/devices that lack WebGPU.
 
 import {
-  pipeline,
+  AutoModel,
+  AutoProcessor,
   RawImage,
   env,
   type ProgressInfo,
-  type BackgroundRemovalPipeline,
+  type PreTrainedModel,
+  type Processor,
 } from "@huggingface/transformers";
 
 type PreloadMsg = { id: number; type: "preload" };
@@ -43,22 +45,42 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
 
-const MODEL_ID = "briaai/RMBG-1.4";
+const MODEL_ID = "onnx-community/BiRefNet-ONNX";
 
-let pipePromise: Promise<BackgroundRemovalPipeline> | undefined;
+type Loaded = { model: PreTrainedModel; processor: Processor };
+let loadPromise: Promise<Loaded> | undefined;
 
-function getPipeline(
+async function tryLoad(
+  device: "webgpu" | "wasm",
+  dtype: "fp16" | "fp32",
   onProgress?: (info: ProgressInfo) => void,
-): Promise<BackgroundRemovalPipeline> {
-  pipePromise ??= pipeline("background-removal", MODEL_ID, {
-    // WASM is the safest default — WebGPU isn't universally available yet.
-    // The model is small enough (~88 MB fp32) that WASM inference is
-    // acceptable, and avoiding WebGPU sidesteps a class of driver bugs.
-    device: "wasm",
-    dtype: "fp32",
+): Promise<Loaded> {
+  const model = (await AutoModel.from_pretrained(MODEL_ID, {
+    device,
+    dtype,
     progress_callback: onProgress,
-  }) as unknown as Promise<BackgroundRemovalPipeline>;
-  return pipePromise;
+  })) as PreTrainedModel;
+  const processor = (await AutoProcessor.from_pretrained(MODEL_ID, {
+    progress_callback: onProgress,
+  })) as Processor;
+  return { model, processor };
+}
+
+function getModel(
+  onProgress?: (info: ProgressInfo) => void,
+): Promise<Loaded> {
+  loadPromise ??= (async () => {
+    // WebGPU + fp16 ≈ 110 MB and runs an order of magnitude faster than
+    // WASM. If WebGPU isn't available (Safari, older Chrome on Linux,
+    // strict enterprise policies) we fall back to WASM + fp32 (~220 MB)
+    // which is universal but slower. Quality is effectively identical.
+    try {
+      return await tryLoad("webgpu", "fp16", onProgress);
+    } catch {
+      return await tryLoad("wasm", "fp32", onProgress);
+    }
+  })();
+  return loadPromise;
 }
 
 function readKey(info: ProgressInfo): string {
@@ -105,11 +127,38 @@ function makeProgressHandler(id: number) {
   };
 }
 
+// Composite a single-channel mask onto the original RGB(A) image and
+// encode as PNG with proper alpha. BiRefNet only outputs the mask — we
+// have to combine it with the source pixels ourselves.
+async function applyMask(
+  source: RawImage,
+  mask: RawImage,
+): Promise<Blob> {
+  const w = source.width;
+  const h = source.height;
+  const srcChannels = source.channels;
+  const srcData = source.data;
+  const maskData = mask.data;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    const sIdx = i * srcChannels;
+    rgba[i * 4 + 0] = srcData[sIdx + 0] ?? 0;
+    rgba[i * 4 + 1] = srcData[sIdx + 1] ?? srcData[sIdx + 0] ?? 0;
+    rgba[i * 4 + 2] = srcData[sIdx + 2] ?? srcData[sIdx + 0] ?? 0;
+    rgba[i * 4 + 3] = maskData[i] ?? 0;
+  }
+  const canvas = new OffscreenCanvas(w, h);
+  const cctx = canvas.getContext("2d");
+  if (!cctx) throw new Error("OffscreenCanvas 2D context unavailable");
+  cctx.putImageData(new ImageData(rgba, w, h), 0, 0);
+  return canvas.convertToBlob({ type: "image/png" });
+}
+
 ctx.onmessage = async (ev: MessageEvent<InMsg>) => {
   const msg = ev.data;
   try {
     if (msg.type === "preload") {
-      await getPipeline(makeProgressHandler(msg.id));
+      await getModel(makeProgressHandler(msg.id));
       ctx.postMessage({ id: msg.id, type: "done" } satisfies DoneMsg);
       return;
     }
@@ -117,14 +166,19 @@ ctx.onmessage = async (ev: MessageEvent<InMsg>) => {
       // If the user uploads before the preload finishes, the same promise
       // is reused — no double download. Progress events on this id only
       // fire on a true cold start.
-      const segmenter = await getPipeline(makeProgressHandler(msg.id));
-      const input = await RawImage.fromBlob(msg.blob);
-      const output = (await segmenter(input)) as unknown as RawImage[];
-      const cutout = output[0];
-      if (!cutout) throw new Error("RMBG returned no result");
-      // RawImage.toBlob() yields a PNG with the alpha mask already
-      // applied — exactly what we ship to R2.
-      const result = await cutout.toBlob("image/png");
+      const { model, processor } = await getModel(makeProgressHandler(msg.id));
+      const source = await RawImage.fromBlob(msg.blob);
+      // Processor handles the BiRefNet-specific resize + normalization.
+      const inputs = (await processor(source)) as { pixel_values: unknown };
+      const out = (await model({ input_image: inputs.pixel_values })) as {
+        output_image: { sigmoid: () => { mul: (n: number) => { to: (t: string) => unknown } } }[];
+      };
+      const tensor = out.output_image[0]?.sigmoid().mul(255).to("uint8");
+      if (!tensor) throw new Error("BiRefNet returned no output tensor");
+      const mask = await RawImage.fromTensor(
+        tensor as unknown as Parameters<typeof RawImage.fromTensor>[0],
+      ).resize(source.width, source.height);
+      const result = await applyMask(source, mask);
       ctx.postMessage({ id: msg.id, type: "done", result } satisfies DoneMsg);
       return;
     }
